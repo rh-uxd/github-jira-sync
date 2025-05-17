@@ -1,175 +1,72 @@
 import 'dotenv/config';
-import { Octokit } from '@octokit/rest';
-import axios from 'axios';
-
-// Initialize GitHub client
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
-});
-
-// Initialize Jira client
-const jiraClient = axios.create({
-  baseURL: process.env.JIRA_URL,
-  headers: {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${process.env.JIRA_PAT}`,
-  },
-});
-
-const userMappings = {
-  evwilkin: 'ewilkins@redhat.com',
-};
-// Map GitHub issue type to Jira issue type
-const issueTypeMappings = {
-  Bug: 'Bug',
-  Epic: 'Epic',
-  Task: 'Task',
-  Feature: 'Story',
-  DevX: 'Task',
-  Documentation: 'Story',
-  Demo: 'Story',
-  Support: 'Story',
-  'Tech debt': 'Task',
-  Initiative: 'Feature',
-};
-
-const buildJiraIssueData = (githubIssue) => {
-  const {
-    type, // issueType.name (need to match list from Jira project)
-    assignees, // replaces assignee but is it supported in Jira?
-    title,
-    html_url,
-    labels,
-    body = '',
-    id,
-    repository_url,
-    user,
-    state, // open or closed - status?
-    milestone, // custom field?
-    url, // used for follow-up API calls
-    sub_issues_summary,
-  } = githubIssue;
-  // Manual mapping of GitHub data to Jira fields
-  const jiraIssueType = issueTypeMappings[type?.name] || 'Story'; // Default to Story if not found
-  const jiraComponent = repository_url.split('/').pop();
-  const jiraLabels = labels.map((label) => label.name.split(' ').join('-'));
-  const jiraAssignee = userMappings[assignees?.[0]?.login] || null;
-
-  // build the Jira issue object
-  const jiraIssue = {
-    fields: {
-      project: {
-        key: process.env.JIRA_PROJECT_KEY,
-      },
-      summary: title,
-      description: `GitHub Issue ${id}\nUpstream URL: ${html_url}\nAssignees: ${assignees.join(
-        ', '
-      )}\n\nDescription:\n${body}`,
-      issuetype: {
-        name: jiraIssueType,
-      },
-      // reporter: { name: user.login },
-      labels: ['GitHub', ...jiraLabels],
-      assignee: { name: jiraAssignee },
-      components: [
-        {
-          name: jiraComponent,
-        },
-      ],
-    },
-  };
-
-  return jiraIssue;
-};
+import { octokit, jiraClient } from './helpers.js';
+import { findJiraIssue } from './findJiraIssue.js';
+import { createJiraIssue } from './createJiraIssue.js';
+import { updateJiraIssue } from './updateJiraIssue.js';
+import { transitionJiraIssue } from './transitionJiraIssue.js';
+import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
 
 async function syncIssues() {
   try {
-    // Fetch GitHub issues
-    const { data: githubIssues } = await octokit.issues.listForRepo({
+    // Fetch all Jira issues for the specific repo/component
+    const { data: jiraIssues } = await jiraClient.get('/rest/api/2/search', {
+      params: {
+        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${process.env.GITHUB_REPO}"`,
+        maxResults: 1000,
+        fields: 'key,id,description,status',
+      },
+    });
+
+    // Fetch open GitHub issues for the specific repo
+    const { data: openGithubIssues } = await octokit.issues.listForRepo({
       owner: process.env.GITHUB_OWNER,
       repo: process.env.GITHUB_REPO,
       state: 'open',
     });
 
-    console.log(`Found ${githubIssues.length} open GitHub issues`);
+    console.log(
+      `Found ${jiraIssues.issues.length} Jira issues for repo ${process.env.GITHUB_REPO} and ${openGithubIssues.length} open GitHub issues`
+    );
 
-    // Process each GitHub issue
-    for (const issue of githubIssues) {
-      // Check if issue already exists in Jira
+    // Keep track of which Jira issues we've processed
+    const processedJiraIssues = new Set();
+
+    // Process open GitHub issues
+    for (const issue of openGithubIssues) {
+      // Skip if the issue is a pull request
+      if (issue.pull_request) {
+        console.log(`Skipping pull request #${issue.number}`);
+        continue;
+      }
+
+      // Find the corresponding Jira issue
       const jiraIssue = await findJiraIssue(issue.id, issue.html_url);
-      if (process.argv.includes('--test')) {
-        console.log('Test mode: skipping issue sync');
-        debugger;
-      } else if (!jiraIssue) {
+
+      if (!jiraIssue) {
         // Create new Jira issue
         console.log(
           `Creating new Jira issue for GitHub issue #${issue.number}`
         );
-        // console.log({ issue });
         await createJiraIssue(issue);
       } else {
         // Update existing Jira issue
         console.log(`Updating existing Jira issue: ${jiraIssue.key}...`);
-        // console.log({ jiraIssue });
-        await updateJiraIssue(jiraIssue.id, issue, jiraIssue.key);
+        await updateJiraIssue(jiraIssue, issue);
+        processedJiraIssues.add(jiraIssue.key);
       }
     }
+
+    // Check remaining Jira issues that weren't processed
+    // This is to handle cases where Jira issues are not linked to any open GitHub issue
+    const unprocessedJiraIssues = jiraIssues.issues.filter(
+      (issue) => !processedJiraIssues.has(issue.key)
+    );
+
+    if (unprocessedJiraIssues.length > 0) {
+      handleUnprocessedJiraIssues(unprocessedJiraIssues);
+    }
   } catch (error) {
-    console.error('Error syncing issues:', error.message);
-  }
-}
-
-async function findJiraIssue(githubIssueId, githubIssueLink) {
-  try {
-    const response = await jiraClient.get('/rest/api/2/search', {
-      params: {
-        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND description ~ "GitHub Issue ${githubIssueId}" OR description ~ "Upstream URL: ${githubIssueLink}"`,
-      },
-    });
-
-    return response.data.issues[0] || null;
-  } catch (error) {
-    console.error(
-      'Error finding Jira issue:',
-      error.message,
-      error.response.data
-    );
-    return null;
-  }
-}
-
-async function createJiraIssue(githubIssue) {
-  try {
-    const jiraIssue = buildJiraIssueData(githubIssue);
-    const response = await jiraClient.post('/rest/api/2/issue', jiraIssue);
-    console.log(
-      `Created Jira issue ${response.data.key} for GitHub issue #${githubIssue.number}`
-    );
-    return response.data;
-  } catch (error) {
-    console.error(
-      'Error creating Jira issue:',
-      error.message,
-      error.response.data
-    );
-  }
-}
-
-async function updateJiraIssue(jiraIssueId, githubIssue, jiraIssueKey) {
-  try {
-    const jiraIssue = buildJiraIssueData(githubIssue);
-
-    await jiraClient.put(`/rest/api/2/issue/${jiraIssueId}`, jiraIssue);
-    console.log(
-      `Updated Jira issue ${jiraIssueKey} for GitHub issue #${githubIssue.number}`
-    );
-  } catch (error) {
-    console.error(
-      'Error updating Jira issue:',
-      error.message,
-      error.response.data
-    );
+    console.error('Error syncing issues:', error.message, { error });
   }
 }
 
