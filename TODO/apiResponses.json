@@ -1,0 +1,760 @@
+// Github "issue" - https://github.com/patternfly/icons/issues/2 
+
+{
+  url: "https://api.github.com/repos/patternfly/icons/issues/2",
+  repository_url: "https://api.github.com/repos/patternfly/icons",
+  labels_url: "https://api.github.com/repos/patternfly/icons/issues/2/labels{/name}",
+  comments_url: "https://api.github.com/repos/patternfly/icons/issues/2/comments",
+  events_url: "https://api.github.com/repos/patternfly/icons/issues/2/events",
+  html_url: "https://github.com/patternfly/icons/issues/2",
+  id: 1720288657,
+  node_id: "I_kwDOJmIohs5miYWR",
+  number: 2,
+  title: "docs: Add example implementation with to README",
+  user: {
+    login: "heyMP",
+    id: 3428964,
+    node_id: "MDQ6VXNlcjM0Mjg5NjQ=",
+    html_url: "https://github.com/heyMP",
+  },
+  labels: [
+  ],
+  state: "open",
+  locked: false,
+  assignee: null,
+  assignees: [
+  ],
+  milestone: null,
+  comments: 0,
+  created_at: "2023-05-22T19:04:53Z", "2025-04-09T13:36:35.000+0000"
+  updated_at: "2023-05-22T19:04:53Z",
+  closed_at: null,
+  author_association: "MEMBER",
+  type: null,
+  active_lock_reason: null,
+  sub_issues_summary: {
+    total: 0,
+    completed: 0,
+    percent_completed: 0,
+  },
+  body: null,
+  closed_by: null,
+  timeline_url: "https://api.github.com/repos/patternfly/icons/issues/2/timeline",
+  performed_via_github_app: null,
+  state_reason: null,
+}
+
+// Github Epic example
+{
+  "url": "https://api.github.com/repos/patternfly/pf-roadmap/issues/217",
+  "repository_url": "https://api.github.com/repos/patternfly/pf-roadmap",
+  "labels_url": "https://api.github.com/repos/patternfly/pf-roadmap/issues/217/labels{/name}",
+  "comments_url": "https://api.github.com/repos/patternfly/pf-roadmap/issues/217/comments",
+  "events_url": "https://api.github.com/repos/patternfly/pf-roadmap/issues/217/events",
+  "html_url": "https://github.com/patternfly/pf-roadmap/issues/217",
+  "id": 2644805297,
+  "node_id": "I_kwDOIui0C86dpIax",
+  "number": 217,
+  "title": "Animation: Expansion",
+  "user": {
+    "login": "andrew-ronaldson",
+    "id": 28658548,
+    "node_id": "MDQ6VXNlcjI4NjU4NTQ4",
+    "avatar_url": "https://avatars.githubusercontent.com/u/28658548?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/andrew-ronaldson",
+    "html_url": "https://github.com/andrew-ronaldson",
+    "followers_url": "https://api.github.com/users/andrew-ronaldson/followers",
+    "following_url": "https://api.github.com/users/andrew-ronaldson/following{/other_user}",
+    "gists_url": "https://api.github.com/users/andrew-ronaldson/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/andrew-ronaldson/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/andrew-ronaldson/subscriptions",
+    "organizations_url": "https://api.github.com/users/andrew-ronaldson/orgs",
+    "repos_url": "https://api.github.com/users/andrew-ronaldson/repos",
+    "events_url": "https://api.github.com/users/andrew-ronaldson/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/andrew-ronaldson/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "labels": [
+    {
+      "id": 7593511648,
+      "node_id": "LA_kwDOIui0C88AAAABxJvK4A",
+      "url": "https://api.github.com/repos/patternfly/pf-roadmap/labels/Animation",
+      "name": "Animation",
+      "color": "0e8a16",
+      "default": false,
+      "description": ""
+    }
+  ],
+  "state": "open",
+  "locked": false,
+  "assignee": {
+    "login": "andrew-ronaldson",
+    "id": 28658548,
+    "node_id": "MDQ6VXNlcjI4NjU4NTQ4",
+    "avatar_url": "https://avatars.githubusercontent.com/u/28658548?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/andrew-ronaldson",
+    "html_url": "https://github.com/andrew-ronaldson",
+    "followers_url": "https://api.github.com/users/andrew-ronaldson/followers",
+    "following_url": "https://api.github.com/users/andrew-ronaldson/following{/other_user}",
+    "gists_url": "https://api.github.com/users/andrew-ronaldson/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/andrew-ronaldson/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/andrew-ronaldson/subscriptions",
+    "organizations_url": "https://api.github.com/users/andrew-ronaldson/orgs",
+    "repos_url": "https://api.github.com/users/andrew-ronaldson/repos",
+    "events_url": "https://api.github.com/users/andrew-ronaldson/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/andrew-ronaldson/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "assignees": [
+    {
+      "login": "andrew-ronaldson",
+      "id": 28658548,
+      "node_id": "MDQ6VXNlcjI4NjU4NTQ4",
+      "avatar_url": "https://avatars.githubusercontent.com/u/28658548?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/andrew-ronaldson",
+      "html_url": "https://github.com/andrew-ronaldson",
+      "followers_url": "https://api.github.com/users/andrew-ronaldson/followers",
+      "following_url": "https://api.github.com/users/andrew-ronaldson/following{/other_user}",
+      "gists_url": "https://api.github.com/users/andrew-ronaldson/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/andrew-ronaldson/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/andrew-ronaldson/subscriptions",
+      "organizations_url": "https://api.github.com/users/andrew-ronaldson/orgs",
+      "repos_url": "https://api.github.com/users/andrew-ronaldson/repos",
+      "events_url": "https://api.github.com/users/andrew-ronaldson/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/andrew-ronaldson/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    }
+  ],
+  "milestone": {
+    "url": "https://api.github.com/repos/patternfly/pf-roadmap/milestones/12",
+    "html_url": "https://github.com/patternfly/pf-roadmap/milestone/12",
+    "labels_url": "https://api.github.com/repos/patternfly/pf-roadmap/milestones/12/labels",
+    "id": 11759300,
+    "node_id": "MI_kwDOIui0C84As27E",
+    "number": 12,
+    "title": "2025.Q2",
+    "description": "",
+    "creator": {
+      "login": "andrew-ronaldson",
+      "id": 28658548,
+      "node_id": "MDQ6VXNlcjI4NjU4NTQ4",
+      "avatar_url": "https://avatars.githubusercontent.com/u/28658548?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/andrew-ronaldson",
+      "html_url": "https://github.com/andrew-ronaldson",
+      "followers_url": "https://api.github.com/users/andrew-ronaldson/followers",
+      "following_url": "https://api.github.com/users/andrew-ronaldson/following{/other_user}",
+      "gists_url": "https://api.github.com/users/andrew-ronaldson/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/andrew-ronaldson/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/andrew-ronaldson/subscriptions",
+      "organizations_url": "https://api.github.com/users/andrew-ronaldson/orgs",
+      "repos_url": "https://api.github.com/users/andrew-ronaldson/repos",
+      "events_url": "https://api.github.com/users/andrew-ronaldson/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/andrew-ronaldson/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "open_issues": 10,
+    "closed_issues": 1,
+    "state": "open",
+    "created_at": "2024-10-19T18:53:58Z",
+    "updated_at": "2025-05-15T15:31:57Z",
+    "due_on": "2025-07-02T07:00:00Z",
+    "closed_at": null
+  },
+  "comments": 0,
+  "created_at": "2024-11-08T18:20:51Z",
+  "updated_at": "2025-02-12T02:42:31Z",
+  "closed_at": null,
+  "author_association": "MEMBER",
+  "type": {
+    "id": 24065407,
+    "node_id": "IT_kwDOAGGFRs4BbzV_",
+    "name": "Epic",
+    "description": "A group of tasks that may be tracked on the roadmap. Epics should not be pulled into sprints.",
+    "color": "purple",
+    "created_at": "2024-10-25T17:44:30Z",
+    "updated_at": "2024-11-04T21:25:21Z",
+    "is_enabled": true
+  },
+  "active_lock_reason": null,
+  "sub_issues_summary": {
+    "total": 23,
+    "completed": 11,
+    "percent_completed": 47
+  },
+  "body": "This is the expansion pattern from design\n\n### Open expandable content\n`--pf-t--global--motion--duration--md` and \n`--pf-t--global--timing-function--decelerate`\n\n## Caret\nCaret icon rotates 90 degrees with a  \n`--pf-t--global--motion--duration--icon--default` and \n`--pf-t--global--timing-function--default`\n\n### Close expandable content\n`--pf-t--global--motion--duration--sm` and\n`--pf-t--global--timing-function--accelerate`\n\n## Caret\nCaret icon rotates -90 degrees with a  \n`--pf-t--global--motion--duration--icon--default` and \n`--pf-t--global--timing-function--default`",
+  "closed_by": null,
+  "reactions": {
+    "url": "https://api.github.com/repos/patternfly/pf-roadmap/issues/217/reactions",
+    "total_count": 0,
+    "+1": 0,
+    "-1": 0,
+    "laugh": 0,
+    "hooray": 0,
+    "confused": 0,
+    "heart": 0,
+    "rocket": 0,
+    "eyes": 0
+  },
+  "timeline_url": "https://api.github.com/repos/patternfly/pf-roadmap/issues/217/timeline",
+  "performed_via_github_app": null,
+  "state_reason": null
+}
+
+// Jira "jiraIssue"
+
+{
+  expand: "operations,versionedRepresentations,editmeta,changelog,renderedFields",
+  id: "16810713",
+  self: "https://issues.redhat.com/rest/api/2/issue/16810713",
+  key: "PF-1463",
+  fields: {
+    issuetype: {
+      self: "https://issues.redhat.com/rest/api/2/issuetype/1",
+      id: "1",
+      description: "A problem that impairs or prevents the functions of the product.",
+      iconUrl: "https://issues.redhat.com/secure/viewavatar?size=xsmall&avatarId=13263&avatarType=issuetype",
+      name: "Bug",
+      subtask: false,
+      avatarId: 13263,
+    },
+    customfield_12318341: null,
+    customfield_12324540: "0.0",
+    timespent: null,
+    customfield_12320940: null,
+    project: {
+      self: "https://issues.redhat.com/rest/api/2/project/12346320",
+      id: "12346320",
+      key: "PF",
+      name: "PatternFly",
+      projectTypeKey: "software",
+      avatarUrls: {
+        "48x48": "https://issues.redhat.com/secure/projectavatar?pid=12346320&avatarId=57573",
+        "24x24": "https://issues.redhat.com/secure/projectavatar?size=small&pid=12346320&avatarId=57573",
+        "16x16": "https://issues.redhat.com/secure/projectavatar?size=xsmall&pid=12346320&avatarId=57573",
+        "32x32": "https://issues.redhat.com/secure/projectavatar?size=medium&pid=12346320&avatarId=57573",
+      },
+    },
+    fixVersions: [
+    ],
+    aggregatetimespent: null,
+    resolution: {
+      self: "https://issues.redhat.com/rest/api/2/resolution/1",
+      id: "1",
+      description: "This issue is closed, and complete.",
+      name: "Done",
+    },
+    customfield_12310220: null,
+    customfield_12314740: "{summaryBean=com.atlassian.jira.plugin.devstatus.rest.SummaryBean@4cd662c7[summary={pullrequest=com.atlassian.jira.plugin.devstatus.rest.SummaryItemBean@339f41f9[overall=PullRequestOverallBean{stateCount=0, state='OPEN', details=PullRequestOverallDetails{openCount=0, mergedCount=0, declinedCount=0}},byInstanceType={}], build=com.atlassian.jira.plugin.devstatus.rest.SummaryItemBean@3fd3abc3[overall=com.atlassian.jira.plugin.devstatus.summary.beans.BuildOverallBean@768ab549[failedBuildCount=0,successfulBuildCount=0,unknownBuildCount=0,count=0,lastUpdated=<null>,lastUpdatedTimestamp=<null>],byInstanceType={}], review=com.atlassian.jira.plugin.devstatus.rest.SummaryItemBean@4210d4f6[overall=com.atlassian.jira.plugin.devstatus.summary.beans.ReviewsOverallBean@63175bc6[stateCount=0,state=<null>,dueDate=<null>,overDue=false,count=0,lastUpdated=<null>,lastUpdatedTimestamp=<null>],byInstanceType={}], deployment-environment=com.atlassian.jira.plugin.devstatus.rest.SummaryItemBean@413869d4[overall=com.atlassian.jira.plugin.devstatus.summary.beans.DeploymentOverallBean@62bbac47[topEnvironments=[],showProjects=false,successfulCount=0,count=0,lastUpdated=<null>,lastUpdatedTimestamp=<null>],byInstanceType={}], repository=com.atlassian.jira.plugin.devstatus.rest.SummaryItemBean@26487382[overall=com.atlassian.jira.plugin.devstatus.summary.beans.CommitOverallBean@7f58d5e6[count=0,lastUpdated=<null>,lastUpdatedTimestamp=<null>],byInstanceType={}], branch=com.atlassian.jira.plugin.devstatus.rest.SummaryItemBean@7d2c7510[overall=com.atlassian.jira.plugin.devstatus.summary.beans.BranchOverallBean@424a2766[count=0,lastUpdated=<null>,lastUpdatedTimestamp=<null>],byInstanceType={}]},errors=[],configErrors=[]], devSummaryJson={\"cachedValue\":{\"errors\":[],\"configErrors\":[],\"summary\":{\"pullrequest\":{\"overall\":{\"count\":0,\"lastUpdated\":null,\"stateCount\":0,\"state\":\"OPEN\",\"details\":{\"openCount\":0,\"mergedCount\":0,\"declinedCount\":0,\"total\":0},\"open\":true},\"byInstanceType\":{}},\"build\":{\"overall\":{\"count\":0,\"lastUpdated\":null,\"failedBuildCount\":0,\"successfulBuildCount\":0,\"unknownBuildCount\":0},\"byInstanceType\":{}},\"review\":{\"overall\":{\"count\":0,\"lastUpdated\":null,\"stateCount\":0,\"state\":null,\"dueDate\":null,\"overDue\":false,\"completed\":false},\"byInstanceType\":{}},\"deployment-environment\":{\"overall\":{\"count\":0,\"lastUpdated\":null,\"topEnvironments\":[],\"showProjects\":false,\"successfulCount\":0},\"byInstanceType\":{}},\"repository\":{\"overall\":{\"count\":0,\"lastUpdated\":null},\"byInstanceType\":{}},\"branch\":{\"overall\":{\"count\":0,\"lastUpdated\":null},\"byInstanceType\":{}}}},\"isStale\":true}}",
+    customfield_12310183: null,
+    resolutiondate: "2025-04-23T20:14:03.000+0000",
+    workratio: -1,
+    customfield_12316840: null,
+    customfield_12317379: null,
+    customfield_12316841: null,
+    customfield_12315950: null,
+    customfield_12310940: null,
+    customfield_12319040: null,
+    lastViewed: null,
+    watches: {
+      self: "https://issues.redhat.com/rest/api/2/issue/PF-1463/watchers",
+      watchCount: 1,
+      isWatching: false,
+    },
+    customfield_12325840: null,
+    customfield_12325441: null,
+    customfield_12325242: [
+    ],
+    customfield_12325442: null,
+    customfield_12325241: null,
+    created: "2025-04-09T13:36:35.000+0000",
+    customfield_12321240: null,
+    customfield_12325440: null,
+    customfield_12325243: null,
+    customfield_12313140: null,
+    priority: {
+      self: "https://issues.redhat.com/rest/api/2/priority/10300",
+      iconUrl: "https://issues.redhat.com/images/icons/priorities/trivial.svg",
+      name: "Undefined",
+      id: "10300",
+    },
+    labels: [
+    ],
+    customfield_12320947: [
+      {
+        self: "https://issues.redhat.com/rest/api/2/customFieldOption/27714",
+        value: "Unclassified",
+        id: "27714",
+        disabled: false,
+      },
+    ],
+    customfield_12320946: {
+      self: "https://issues.redhat.com/rest/api/2/customFieldOption/27705",
+      value: "False",
+      id: "27705",
+      disabled: false,
+    },
+    aggregatetimeoriginalestimate: null,
+    timeestimate: null,
+    versions: [
+    ],
+    issuelinks: [
+    ],
+    customfield_12325240: null,
+    assignee: null,
+    updated: "2025-04-23T20:14:03.000+0000",
+    customfield_12313942: null,
+    customfield_12313941: null,
+    status: {
+      self: "https://issues.redhat.com/rest/api/2/status/6",
+      description: "The issue is closed. See the resolution for context regarding why (for example Done, Abandoned, Duplicate, etc)",
+      iconUrl: "https://issues.redhat.com/images/icons/statuses/closed.png",
+      name: "Closed",
+      id: "6",
+      statusCategory: {
+        self: "https://issues.redhat.com/rest/api/2/statuscategory/3",
+        id: 3,
+        key: "done",
+        colorName: "success",
+        name: "Done",
+      },
+    },
+    components: [
+      {
+        self: "https://issues.redhat.com/rest/api/2/component/12404859",
+        id: "12404859",
+        name: "patternfly-infra-issues",
+      },
+    ],
+    customfield_12316142: null,
+    timeoriginalestimate: null,
+    description: "[2982858795] Upstream Reporter: Donald Labaj\nUpstream issue status: Closed\nUpstream description: {quote}Following the release of 6.2.0 we need to release a patch addressing the following issues:\n\nQuickstarts:\n\n* ☒\n** [https://github.com/patternfly/patternfly-quickstarts/issues/384]\n\nCore:\n\n* ☒\n** [https://github.com/patternfly/patternfly/pull/7455]\n\nReact:\n\n* ☒\n** [https://github.com/patternfly/patternfly-react/issues/11709]\n* ☒\n** [https://github.com/patternfly/patternfly-react/pull/11650]\n* ☒ [https://github.com/patternfly/patternfly-react/pull/11704]\n* ☒ [https://github.com/patternfly/patternfly-react/pull/11673]\n* ☒ [https://github.com/patternfly/patternfly-react/pull/11760]\n* ☒ [https://github.com/patternfly/patternfly-react/pull/11761]\n{quote}\nUpstream URL: https://github.com/patternfly/patternfly-infra-issues/issues/137",
+    customfield_12314040: null,
+    customfield_12320844: null,
+    customfield_12320842: null,
+    customfield_12310243: null,
+    aggregatetimeestimate: null,
+    customfield_12316542: {
+      self: "https://issues.redhat.com/rest/api/2/customFieldOption/14655",
+      value: "False",
+      id: "14655",
+      disabled: false,
+    },
+    customfield_12317313: null,
+    customfield_12316543: {
+      self: "https://issues.redhat.com/rest/api/2/customFieldOption/14657",
+      value: "False",
+      id: "14657",
+      disabled: false,
+    },
+    customfield_12316544: "None",
+    customfield_12310840: "9223372036854775807",
+    summary: "[patternfly/patternfly-infra-issues] 6.2.0 patch release",
+    customfield_12323640: null,
+    customfield_12323642: null,
+    creator: {
+      self: "https://issues.redhat.com/rest/api/2/user?username=upstream-sync",
+      name: "upstream-sync",
+      key: "upstream-sync",
+      emailAddress: "rbean+upstreamsync@redhat.com",
+      avatarUrls: {
+        "48x48": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=48",
+        "24x24": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=24",
+        "16x16": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=16",
+        "32x32": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=32",
+      },
+      displayName: "Upstream Sync",
+      active: true,
+      timeZone: "GMT",
+    },
+    customfield_12323641: null,
+    customfield_12325342: null,
+    customfield_12325343: null,
+    subtasks: [
+    ],
+    customfield_12321140: null,
+    customfield_12325340: null,
+    customfield_12325341: null,
+    customfield_12320850: null,
+    reporter: {
+      self: "https://issues.redhat.com/rest/api/2/user?username=upstream-sync",
+      name: "upstream-sync",
+      key: "upstream-sync",
+      emailAddress: "rbean+upstreamsync@redhat.com",
+      avatarUrls: {
+        "48x48": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=48",
+        "24x24": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=24",
+        "16x16": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=16",
+        "32x32": "https://www.gravatar.com/avatar/39656a671d1a447b0a6b36775223fb9b?d=mm&s=32",
+      },
+      displayName: "Upstream Sync",
+      active: true,
+      timeZone: "GMT",
+    },
+    aggregateprogress: {
+      progress: 0,
+      total: 0,
+    },
+    customfield_12323644: null,
+    customfield_12323643: null,
+    customfield_12323646: null,
+    customfield_12323645: null,
+    environment: null,
+    customfield_12315542: null,
+    customfield_12315740: null,
+    customfield_12313441: "",
+    customfield_12313440: "0.0",
+    customfield_12313240: null,
+    duedate: null,
+    customfield_12311140: null,
+    customfield_12319742: null,
+    progress: {
+      progress: 0,
+      total: 0,
+    },
+    votes: {
+      self: "https://issues.redhat.com/rest/api/2/issue/PF-1463/votes",
+      votes: 0,
+      hasVoted: false,
+    },
+    customfield_12319743: null,
+    customfield_12310213: null,
+    customfield_12311940: "2|hzzahb:",
+  },
+}
+
+
+
+
+// GraphQL
+query GetIssueDetails(
+  $owner: String!
+  $repo: String!
+) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: 6) {
+      # State (Open or Closed)
+      state
+      
+      # Issue Type (Bug, Epic, etc)
+      issueType {
+        name
+      }
+      
+      # Issue Name (Title)
+      title
+
+      # Issue URL
+      url
+
+      # Issue Description (as String)
+      bodyText
+
+      # Labels
+      labels(first: 10) {
+        nodes {
+          name
+        }
+        totalCount
+      }
+
+      # Assignees
+      assignees(first: 10) {
+        nodes {
+          login
+        }
+        totalCount
+      }
+
+      # Comments
+      comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+        nodes {
+          author {
+            login
+          }
+          bodyText
+          createdAt
+          updatedAt
+        }
+        totalCount
+      }
+			
+      subIssuesSummary {
+        total
+      }
+      
+      # Sub-issues (Child Issues)
+      # GitHub's feature for task lists / child issues within an issue
+      subIssues(first: 50) {
+        nodes {
+          state
+          title
+          url
+          number
+          repository {
+            nameWithOwner
+          }
+          assignees(first: 3) {
+            nodes {
+              login
+            }
+          }
+          labels(first: 10) {
+            nodes {
+              name
+            }
+          }
+        }
+        totalCount
+      }
+    }
+  }
+}
+// Variables
+{
+  "owner": "patternfly",
+  "repo": "icons"
+}
+
+// Res
+{
+  "data": {
+    "repository": {
+      "issue": {
+        "state": "OPEN",
+        "issueType": {
+          "name": "Initiative"
+        },
+        "title": "test - jira sync",
+        "url": "https://github.com/patternfly/icons/issues/6",
+        "bodyText": "Test issue 123",
+        "labels": {
+          "nodes": [
+            {
+              "name": "documentation"
+            },
+            {
+              "name": "good first issue"
+            }
+          ],
+          "totalCount": 2
+        },
+        "assignees": {
+          "nodes": [
+            {
+              "login": "evwilkin"
+            }
+          ],
+          "totalCount": 1
+        },
+        "comments": {
+          "nodes": [
+            {
+              "author": {
+                "login": "evwilkin"
+              },
+              "bodyText": "Test comment",
+              "createdAt": "2025-05-16T15:11:37Z",
+              "updatedAt": "2025-05-16T15:11:37Z"
+            }
+          ],
+          "totalCount": 1
+        },
+        "subIssuesSummary": {
+          "total": 2
+        },
+        "subIssues": {
+          "nodes": [
+            {
+              "state": "OPEN",
+              "title": "Test icons sub-issue",
+              "url": "https://github.com/patternfly/icons/issues/7",
+              "number": 7,
+              "repository": {
+                "nameWithOwner": "patternfly/icons"
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "labels": {
+                "nodes": []
+              }
+            },
+            {
+              "state": "OPEN",
+              "title": "Test sub-issue in gh.io",
+              "url": "https://github.com/patternfly/patternfly.github.io/issues/14",
+              "number": 14,
+              "repository": {
+                "nameWithOwner": "patternfly/patternfly.github.io"
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "labels": {
+                "nodes": []
+              }
+            }
+          ],
+          "totalCount": 2
+        }
+      }
+    }
+  }
+}
+
+
+// Get all repo issues
+query GetAllRepoIssues(
+  $owner: String!
+  $repo: String!
+  $numIssuesToFetch: Int = 30 # How many issues to fetch per page
+  $issuesCursor: String = null # For pagination of the issues list
+  $issueStates: [IssueState!] = [OPEN] # Filter by issue state (e.g., OPEN, CLOSED)
+  $numLabelsPerIssue: Int = 10
+  $numAssigneesPerIssue: Int = 10
+  $numCommentsPerIssue: Int = 20
+  $numSubIssuesPerIssue: Int = 30
+  $since: DateTime = "2025-05-21T00:26:35.846Z"
+) {
+  repository(owner: $owner, name: $repo) {
+    issues(
+      first: $numIssuesToFetch
+      after: $issuesCursor
+      states: $issueStates # You can filter by states: [OPEN], [CLOSED], or [OPEN, CLOSED]
+      filterBy: {since: $since}
+      orderBy: {field: CREATED_AT, direction: DESC} # Example: order by newest created
+    ) {
+      nodes {
+        # --- Fields for each issue ---
+        id # Globally unique ID for the issue
+        number # Repository-specific issue number
+
+        # Issue Name (Title)
+        title
+
+        # Issue URL
+        url
+
+        # Issue Description (as MD)
+        body
+
+        # Labels for this issue
+        labels(first: $numLabelsPerIssue) {
+          nodes {
+            name
+          }
+          totalCount
+        }
+
+        # Assignees for this issue
+        assignees(first: $numAssigneesPerIssue) {
+          nodes {
+            login
+          }
+          totalCount
+        }
+
+        # Comments for this issue
+        comments(first: $numCommentsPerIssue, orderBy: {field: UPDATED_AT, direction: DESC}) {
+          nodes {
+            author {
+              login
+            }
+            body
+            createdAt
+            updatedAt
+            url
+          }
+          totalCount
+        }
+
+        # Sub-issues (Child Issues) for this issue
+        subIssues(first: $numSubIssuesPerIssue) {
+          nodes {
+            title
+            url
+            state # e.g., OPEN, CLOSED
+            number
+            repository {
+              nameWithOwner
+            }
+            assignees(first: 3) {
+              nodes {
+                login
+              }
+            }
+            labels(first: 3) {
+              nodes {
+                name
+              }
+            }
+          }
+          totalCount
+        }
+        # --- End fields for each issue ---
+      }
+      pageInfo {
+        endCursor # Use this as the 'issuesCursor' for the next page
+        hasNextPage # True if there are more issues to fetch
+      }
+      totalCount # Total number of issues in the repository matching the filters
+    }
+  }
+}
+// Variables
+{
+  "owner": "patternfly",
+  "repo": "icons"
+}
+
+// Res
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "nodes": [
+          {
+            "id": "I_kwDOJmIohs63o_As",
+            "number": 7,
+            "title": "Test icons sub-issue",
+            "url": "https://github.com/patternfly/icons/issues/7",
+            "body": "Test sub-issue of icons issue #2 Jira PF-1800 in icons",
+            "labels": {
+              "nodes": [],
+              "totalCount": 0
+            },
+            "assignees": {
+              "nodes": [],
+              "totalCount": 0
+            },
+            "comments": {
+              "nodes": [],
+              "totalCount": 0
+            },
+            "subIssues": {
+              "nodes": [],
+              "totalCount": 0
+            }
+          }
+        ],
+        "pageInfo": {
+          "endCursor": "Y3Vyc29yOnYyOpK5MjAyNS0wNS0yMVQxMzozNzoyMC0wNDowMM63o_As",
+          "hasNextPage": false
+        },
+        "totalCount": 1
+      }
+    }
+  }
+}
