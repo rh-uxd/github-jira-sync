@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { octokit, jiraClient } from './helpers.js';
+import { octokit, jiraClient, repoIssues } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
@@ -17,30 +17,27 @@ async function syncIssues() {
       },
     });
 
-    // Fetch open GitHub issues for the specific repo
-    const { data: openGithubIssues } = await octokit.issues.listForRepo({
-      owner: process.env.GITHUB_OWNER,
-      repo: process.env.GITHUB_REPO,
-      state: 'open',
-    });
+    // Get GitHub issues from GraphQL response
+    const githubApiResponse = await repoIssues;
+    const githubIssues = githubApiResponse.repository.issues.nodes;
 
     console.log(
-      `Found ${jiraIssues.issues.length} Jira issues for repo ${process.env.GITHUB_REPO} and ${openGithubIssues.length} open GitHub issues`
+      `Found ${jiraIssues.issues.length} Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} GitHub issues`
     );
 
     // Keep track of which Jira issues we've processed
     const processedJiraIssues = new Set();
 
-    // Process open GitHub issues
-    for (const issue of openGithubIssues) {
-      // Skip if the issue is a pull request
+    // Process GitHub issues
+    for (const issue of githubIssues) {
+      // Skip if the issue is a pull request (GraphQL doesn't return pull requests)
       if (issue.pull_request) {
         console.log(`Skipping pull request #${issue.number}`);
         continue;
       }
 
       // Find the corresponding Jira issue
-      const jiraIssue = await findJiraIssue(issue.id, issue.html_url);
+      const jiraIssue = await findJiraIssue(issue.id, issue.url);
 
       if (!jiraIssue) {
         // Create new Jira issue

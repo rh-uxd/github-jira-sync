@@ -24,54 +24,45 @@ async function updateSubTasks(parentJiraKey, githubIssue) {
     const existingSubTaskMap = new Map(
       existingSubTasks
         .map((task) => {
-          const match = task.fields.description.match(/Upstream URL/);
+          const match = task.fields.description.match(/Upstream URL: (.*)/);
           return match ? [match[1], task] : null;
         })
         .filter(Boolean)
     );
 
-    // Get linked issues from GitHub using the timeline API
-    const { data: timeline } = await octokit.issues.listEventsForTimeline({
-      owner: process.env.GITHUB_OWNER,
-      repo: process.env.GITHUB_REPO,
-      issue_number: githubIssue.number,
-    });
+    // Check if there are subissues
+    if (githubIssue.subIssues.totalCount > 0) {
+      // Get sub-issues from the GraphQL response
+      const subIssues = githubIssue.subIssues.nodes;
 
-    // Filter for cross-referenced events that indicate sub-issues
-    const subIssueEvents = timeline.filter(
-      (event) =>
-        event.event === 'cross-referenced' &&
-        event.source?.issue &&
-        event.source.issue.repository_url !== githubIssue.repository_url
-    );
+      // Update or create sub-tasks
+      for (const subIssue of subIssues) {
+        const existingTask = existingSubTaskMap.get(subIssue.url);
 
-    // Update or create sub-tasks
-    for (const event of subIssueEvents) {
-      const subIssue = event.source.issue;
-      const existingTask = existingSubTaskMap.get(subIssue.number.toString());
-
-      if (existingTask) {
-        // Update existing sub-task
-        const subtask = {
-          fields: {
-            summary: subIssue.title,
-            description: `GH Issue ${subIssue.number}\nGH ID ${
-              subIssue.id
-            }\nUpstream URL: ${
-              subIssue.html_url
-            }\nRepo: ${subIssue.repository_url
-              .split('/')
-              .pop()}\n\nDescription:\n${subIssue.body || ''}`,
-          },
-        };
-        await jiraClient.put(`/rest/api/2/issue/${existingTask.key}`, subtask);
-        console.log(
-          `Updated sub-task ${existingTask.key} for GitHub issue #${subIssue.number}`
-        );
-        existingSubTaskMap.delete(subIssue.number.toString());
-      } else {
-        // Create new sub-task
-        await createSubTasks(parentJiraKey, subIssue);
+        if (existingTask) {
+          // Update existing sub-task
+          const subtask = {
+            fields: {
+              summary: subIssue.title,
+              description: `GH Issue ${subIssue.number}\nGH ID ${
+                subIssue.id
+              }\nUpstream URL: ${subIssue.url}\nRepo: ${
+                subIssue.repository.nameWithOwner
+              }\n\nDescription:\n${subIssue.body || ''}`,
+            },
+          };
+          await jiraClient.put(
+            `/rest/api/2/issue/${existingTask.key}`,
+            subtask
+          );
+          console.log(
+            `Updated sub-task ${existingTask.key} for GitHub issue #${subIssue.number}`
+          );
+          existingSubTaskMap.delete(subIssue.url);
+        } else {
+          // Create new sub-task
+          await createSubTasks(parentJiraKey, subIssue);
+        }
       }
     }
 
@@ -102,8 +93,8 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       },
       relationship: 'relates to',
       object: {
-        url: githubIssue.html_url,
-        title: githubIssue.html_url,
+        url: githubIssue.url,
+        title: githubIssue.title,
       },
     });
 
