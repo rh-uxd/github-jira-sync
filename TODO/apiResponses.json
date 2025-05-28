@@ -591,6 +591,7 @@ query GetIssueDetails(
                 "nodes": []
               }
             },
+            
             {
               "state": "OPEN",
               "title": "Test sub-issue in gh.io",
@@ -757,4 +758,96 @@ query GetAllRepoIssues(
       }
     }
   }
+}
+
+
+
+// Jira issue link types
+{
+  "issueLinkTypes": [
+    {
+      "id": "12310920",
+      "name": "Account",
+      "inward": "account is impacted by",
+      "outward": "impacts account",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310920"
+    },
+    {
+      "id": "12310720",
+      "name": "Blocks",
+      "inward": "is blocked by",
+      "outward": "blocks",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310720"
+    },
+    {
+      "id": "12310220",
+      "name": "Causality",
+      "inward": "is caused by",
+      "outward": "causes",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310220"
+    },
+    {
+      "id": "12310120",
+      "name": "Cloners",
+      "inward": "is cloned by",
+      "outward": "clones",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310120"
+    },
+    {
+      "id": "12311220",
+      "name": "Depend",
+      "inward": "is depended on by",
+      "outward": "depends on",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12311220"
+    },
+    {
+      "id": "12310420",
+      "name": "Document",
+      "inward": "is documented by",
+      "outward": "documents",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310420"
+    },
+    {
+      "id": "12310000",
+      "name": "Duplicate",
+      "inward": "is duplicated by",
+      "outward": "duplicates",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310000"
+    },
+    {
+      "id": "10011",
+      "name": "Incorporates",
+      "inward": "is incorporated by",
+      "outward": "incorporates",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/10011"
+    },
+    {
+      "id": "12311920",
+      "name": "Informs",
+      "inward": "is Informed by",
+      "outward": "informs",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12311920"
+    },
+    {
+      "id": "12311720",
+      "name": "Issue split",
+      "inward": "split from",
+      "outward": "split to",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12311720"
+    },
+    {
+      "id": "12310001",
+      "name": "Related",
+      "inward": "is related to",
+      "outward": "relates to",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310001"
+    },
+    {
+      "id": "12310723",
+      "name": "Triggers",
+      "inward": "is triggered by",
+      "outward": "is triggering",
+      "self": "https://issues.redhat.com/rest/api/2/issueLinkType/12310723"
+    }
+  ]
 }
