@@ -34,7 +34,39 @@ const issueTypeMappings = {
   Initiative: 'Feature',
 };
 
-export const buildJiraIssueData = (githubIssue) => {
+const availableComponents = [
+  'AI-infra-ui-components',
+  'chatbot',
+  'design-tokens',
+  'icons',
+  'mission-control-dashboard',
+  'patternfly',
+  'patternfly-a11y',
+  'patternfly-design',
+  'patternfly-design-kit',
+  'patternfly-extension-seed',
+  'patternfly-infra-issues',
+  'patternfly-org',
+  'patternfly-quickstarts',
+  'patternfly-react',
+  'patternfly-react-seed',
+  'pf-codemods',
+  'pf-roadmap',
+  'react-catalog-view',
+  'react-component-groups',
+  'react-console',
+  'react-data-view',
+  'react-log-viewer',
+  'react-topology',
+  'react-user-feedback',
+  'react-virtualized-extension',
+  'virtual-assistant',
+];
+
+export const getJiraComponent = (repoName) =>
+  availableComponents.includes(repoName) ? repoName : null;
+
+export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   const {
     title,
     url,
@@ -48,7 +80,7 @@ export const buildJiraIssueData = (githubIssue) => {
   } = githubIssue;
 
   // Extract repository name from the repository object
-  const jiraComponent = url.split('/')[4];
+  const jiraComponent = getJiraComponent(url.split('/')[4]);
 
   // Map labels from GraphQL structure
   const jiraLabels = labels.nodes.map((label) =>
@@ -57,31 +89,48 @@ export const buildJiraIssueData = (githubIssue) => {
 
   // Map assignees from GraphQL structure
   const assigneeLogins = assignees.nodes.map((a) => a.login);
-  const jiraAssignee = userMappings[assigneeLogins[0]] || null;
+  const jiraAssignee = userMappings[assigneeLogins[0]] || '';
   const jiraIssueType = issueTypeMappings[issueType?.name] || 'Story';
 
   // build the Jira issue object to create/update Jira with
-  const jiraIssue = {
-    fields: {
-      project: {
-        key: process.env.JIRA_PROJECT_KEY,
-      },
-      summary: title,
-      description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
-        ', '
-      )}\n\nDescription:\n${body || ''}`,
-      issuetype: {
-        name: jiraIssueType,
-      },
-      labels: ['GitHub', ...jiraLabels],
-      assignee: { name: jiraAssignee },
-      components: [
-        {
-          name: jiraComponent,
+  // Updating an issue allows fewer fields than creating new issue
+  const jiraIssue = isUpdateIssue
+    ? {
+        fields: {
+          summary: title,
+          description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
+            ', '
+          )}\n\n----\n\n*Description:*\n${body || ''}`,
+          labels: ['GitHub', ...jiraLabels],
+          assignee: { name: jiraAssignee },
+          components: [
+            {
+              name: jiraComponent,
+            },
+          ],
         },
-      ],
-    },
-  };
+      }
+    : {
+        fields: {
+          project: {
+            key: process.env.JIRA_PROJECT_KEY,
+          },
+          summary: title,
+          description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
+            ', '
+          )}\n\n----\n\n*Description:*\n${body || ''}`,
+          issuetype: {
+            name: jiraIssueType,
+          },
+          labels: ['GitHub', ...jiraLabels],
+          assignee: { name: jiraAssignee },
+          components: [
+            {
+              name: jiraComponent,
+            },
+          ],
+        },
+      };
 
   return jiraIssue;
 };

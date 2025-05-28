@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { octokit, jiraClient, repoIssues } from './helpers.js';
+import { jiraClient, repoIssues } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
@@ -37,7 +37,7 @@ async function syncIssues() {
       }
 
       // Find the corresponding Jira issue
-      const jiraIssue = await findJiraIssue(issue.id, issue.url);
+      const jiraIssue = await findJiraIssue(issue.url);
 
       if (!jiraIssue) {
         // Create new Jira issue
@@ -69,35 +69,3 @@ async function syncIssues() {
 
 // Run the sync
 syncIssues();
-
-/* SUBTASKS FOR EPICS
-  let subtasks = [];
-  if (sub_issues_summary.total > 0) {
-    // get subissues from api at `${url}/sub_issues`
-    // and add them to the subtasks array
-    const { data: subIssues } = await octokit.issues.listForRepo({
-      owner: process.env.GITHUB_OWNER,
-      repo: process.env.GITHUB_REPO,
-      issue_number: id,
-    });
-    for (const subIssue of subIssues) {
-      const subtask = {
-        fields: {
-          project: {
-            key: process.env.JIRA_PROJECT_KEY,
-          },
-          summary: subIssue.title,
-          description: `GitHub Issue ${subIssue.number}: ${subIssue.html_url}`,
-          issuetype: {
-            name: 'Sub-task',
-          },
-          parent: {
-            key: jiraIssue.key, // Assuming you have the parent issue key
-          },
-        },
-      };
-      subtasks.push(subtask);
-    }
-  }
-  console.log({ githubIssue, subtasks });
-  END SUBTASKS FOR EPICS */

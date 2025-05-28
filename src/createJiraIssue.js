@@ -1,67 +1,57 @@
-import { buildJiraIssueData, jiraClient, octokit } from './helpers.js';
+import { buildJiraIssueData, jiraClient, getJiraComponent } from './helpers.js';
+import { updateSubTasks } from './updateJiraIssue.js';
 
-export async function createSubTasks(parentJiraKey, githubIssue) {
+export async function createSubTasks(parentJiraKey, subIssue) {
   try {
-    // Get sub-issues from the GraphQL response
-    const subIssues = githubIssue?.subIssues?.nodes;
+    // Each sub-issue is a Jira sub-task
+    // Extract repo name from the repository object
+    const [repoOwner, repoName] = subIssue.repository.nameWithOwner.split('/');
 
-    if (subIssues) {
-      for (const subIssue of subIssues) {
-        // Extract repo name from the repository object
-        const [repoOwner, repoName] =
-          subIssue.repository.nameWithOwner.split('/');
-
-        // Create sub-task in Jira
-        const subtask = {
-          fields: {
-            project: {
-              key: process.env.JIRA_PROJECT_KEY,
-            },
-            summary: subIssue.title,
-            description: `GH Issue ${subIssue.number}\nGH ID ${
-              subIssue.id
-            }\nUpstream URL: ${
-              subIssue.url
-            }\nRepo: ${repoOwner}/${repoName}\n\nDescription:\n${
-              subIssue.body || ''
-            }`,
-            issuetype: {
-              name: 'Sub-task',
-            },
-            parent: {
-              key: parentJiraKey,
-            },
-            components: [
-              {
-                name: repoName,
-              },
-            ],
-          },
-        };
-
-        const response = await jiraClient.post('/rest/api/2/issue', subtask);
-        console.log(
-          `Created sub-task ${response.data.key} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
-        );
-
-        // Add remote link to GitHub issue
-        await jiraClient.post(
-          `/rest/api/2/issue/${response.data.key}/remotelink`,
+    // Create sub-task in Jira
+    const subtask = {
+      fields: {
+        project: {
+          key: process.env.JIRA_PROJECT_KEY,
+        },
+        summary: subIssue.title,
+        description: `GH Issue ${subIssue.number}\nGH ID ${
+          subIssue?.id || ''
+        }\nUpstream URL: ${
+          subIssue.url
+        }\nRepo: ${repoOwner}/${repoName}\n\n----\n\n*Description:*\n${
+          subIssue?.body || ''
+        }`,
+        issuetype: {
+          name: 'Sub-task',
+        },
+        parent: {
+          key: parentJiraKey,
+        },
+        components: [
           {
-            globalId: `github-${subIssue.id}`,
-            application: {
-              type: 'com.github',
-              name: 'GitHub',
-            },
-            relationship: 'relates to',
-            object: {
-              url: subIssue.url,
-              title: subIssue.url,
-            },
-          }
-        );
-      }
-    }
+            name: getJiraComponent(repoName),
+          },
+        ],
+      },
+    };
+
+    const response = await jiraClient.post('/rest/api/2/issue', subtask);
+    console.log(
+      `Created sub-task ${response.data.key} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
+    );
+    // Add remote link to GitHub issue
+    await jiraClient.post(`/rest/api/2/issue/${response.data.key}/remotelink`, {
+      globalId: `github-${subIssue.id}`,
+      application: {
+        type: 'com.github',
+        name: 'GitHub',
+      },
+      relationship: 'clones',
+      object: {
+        url: subIssue.url,
+        title: subIssue.url,
+      },
+    });
   } catch (error) {
     console.error('Error creating sub-tasks:', error.message, { error });
   }
@@ -82,16 +72,15 @@ export async function createJiraIssue(githubIssue) {
         type: 'com.github',
         name: 'GitHub',
       },
-      relationship: 'relates to',
+      relationship: 'clones',
       object: {
         url: githubIssue.html_url,
         title: githubIssue.html_url,
       },
     });
-
     if (githubIssue.subIssues.totalCount > 0) {
       // Create sub-tasks for any sub-issues
-      await createSubTasks(response.data.key, githubIssue);
+      await updateSubTasks(response.data.key, githubIssue);
     }
 
     return response.data;

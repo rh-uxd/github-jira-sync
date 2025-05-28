@@ -1,10 +1,10 @@
 import { jiraClient } from './helpers.js';
 
-export async function findJiraIssue(githubIssueId, githubIssueLink) {
+export async function findJiraIssue(githubIssueLink) {
   try {
     const response = await jiraClient.get('/rest/api/2/search', {
       params: {
-        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND description ~ "GitHub Issue ${githubIssueId}" OR description ~ "Upstream URL: ${githubIssueLink}"`,
+        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND description ~ "Upstream URL: ${githubIssueLink}"`,
       },
     });
 

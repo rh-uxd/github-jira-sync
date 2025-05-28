@@ -1,6 +1,7 @@
-import { buildJiraIssueData, jiraClient, octokit } from './helpers.js';
+import { buildJiraIssueData, jiraClient } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createSubTasks } from './createJiraIssue.js';
+import { findJiraIssue } from './findJiraIssue.js';
 
 async function findSubTasks(jiraIssueKey) {
   try {
@@ -17,7 +18,7 @@ async function findSubTasks(jiraIssueKey) {
   }
 }
 
-async function updateSubTasks(parentJiraKey, githubIssue) {
+export async function updateSubTasks(parentJiraKey, githubIssue) {
   try {
     // Get existing sub-tasks
     const existingSubTasks = await findSubTasks(parentJiraKey);
@@ -43,12 +44,12 @@ async function updateSubTasks(parentJiraKey, githubIssue) {
           // Update existing sub-task
           const subtask = {
             fields: {
-              summary: subIssue.title,
+              summary: `GitHub: ${subIssue.title}`,
               description: `GH Issue ${subIssue.number}\nGH ID ${
                 subIssue.id
               }\nUpstream URL: ${subIssue.url}\nRepo: ${
                 subIssue.repository.nameWithOwner
-              }\n\nDescription:\n${subIssue.body || ''}`,
+              }\n\n----\n\n*Description:*\n${subIssue.body || ''}`,
             },
           };
           await jiraClient.put(
@@ -60,8 +61,25 @@ async function updateSubTasks(parentJiraKey, githubIssue) {
           );
           existingSubTaskMap.delete(subIssue.url);
         } else {
-          // Create new sub-task
-          await createSubTasks(parentJiraKey, subIssue);
+          // check if issue exists and needs to be flagged as subtask
+          // Find the corresponding Jira issue
+          const jiraIssue = await findJiraIssue(subIssue.url);
+
+          if (!jiraIssue) {
+            // Create new Jira issue
+            console.log(
+              `Creating new Jira issue as sub-task for GitHub issue #${issue.number}`
+            );
+            // Create new sub-task
+            await createSubTasks(parentJiraKey, subIssue);
+          } else {
+            // Update existing Jira issue
+            console.log(
+              `Updating existing Jira issue as sub-task: ${jiraIssue.key}...`
+            );
+            await updateJiraIssue(jiraIssue, subIssue);
+            processedJiraIssues.add(jiraIssue.key);
+          }
         }
       }
     }
@@ -80,9 +98,8 @@ async function updateSubTasks(parentJiraKey, githubIssue) {
 
 export async function updateJiraIssue(jiraIssue, githubIssue) {
   try {
-    const jiraIssueData = buildJiraIssueData(githubIssue);
-
-    await jiraClient.put(`/rest/api/2/issue/${jiraIssue.id}`, jiraIssueData);
+    const jiraIssueData = buildJiraIssueData(githubIssue, true);
+    await jiraClient.put(`/rest/api/2/issue/${jiraIssue.key}`, jiraIssueData);
 
     // Add remote link to GitHub issue
     await jiraClient.post(`/rest/api/2/issue/${jiraIssue.key}/remotelink`, {
@@ -91,7 +108,7 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
         type: 'com.github',
         name: 'GitHub',
       },
-      relationship: 'relates to',
+      relationship: 'clones',
       object: {
         url: githubIssue.url,
         title: githubIssue.title,
