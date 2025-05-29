@@ -1,4 +1,4 @@
-import { octokit } from './helpers.js';
+import { octokit, delay } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 
 // Additional check only for unprocessed Jira issues
@@ -32,6 +32,7 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
             ` - GitHub issue #${githubNumber} is closed but Jira issue ${jiraIssue.key} is not, transitioning to Closed`
           );
           await transitionJiraIssue(jiraIssue.key, 'Closed');
+          await delay(1000);
           console.log(
             `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubNumber}`
           );

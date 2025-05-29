@@ -1,4 +1,4 @@
-import { jiraClient } from './helpers.js';
+import { jiraClient, delay } from './helpers.js';
 
 export async function transitionJiraIssue(jiraIssueKey, targetState) {
   try {
@@ -6,6 +6,7 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
     const { data: transitions } = await jiraClient.get(
       `/rest/api/2/issue/${jiraIssueKey}/transitions`
     );
+    await delay(1000);
 
     // Find the appropriate transition based on target state
     const transition = transitions.transitions.find(
@@ -18,6 +19,7 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
           id: transition.id,
         },
       });
+      await delay(1000);
       console.log(
         ` - Transitioned Jira issue ${jiraIssueKey} to ${transition.name}`
       );

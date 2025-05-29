@@ -1,4 +1,4 @@
-import { jiraClient } from './helpers.js';
+import { jiraClient, delay } from './helpers.js';
 
 export function findJiraIssue(githubIssueLink, jiraIssues) {
   try {
@@ -19,6 +19,7 @@ export async function fetchJiraIssue(githubIssueLink) {
         jql: `project = ${process.env.JIRA_PROJECT_KEY} AND description ~ "Upstream URL: ${githubIssueLink}"`,
       },
     });
+    await delay(1000);
 
     // If the search returns no issues, return null
     if (response.data.issues.length === 0) {

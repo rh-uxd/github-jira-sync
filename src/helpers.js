@@ -17,6 +17,8 @@ export const jiraClient = axios.create({
   },
 });
 
+export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const userMappings = {
   evwilkin: 'ewilkins@redhat.com',
 };
@@ -129,6 +131,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
               name: jiraComponent,
             },
           ],
+          [jiraIssueType === 'Epic' ? 'customfield_12311141' : '']: title, // Epic name field is required
         },
       };
 

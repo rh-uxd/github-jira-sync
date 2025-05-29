@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { jiraClient, repoIssues } from './helpers.js';
+import { jiraClient, repoIssues, delay } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
@@ -15,6 +15,7 @@ async function syncIssues() {
         fields: 'key,id,description,status',
       },
     });
+    await delay(1000);
 
     // Get GitHub issues from GraphQL response
     const githubApiResponse = await repoIssues;
@@ -37,6 +38,7 @@ async function syncIssues() {
 
       // Find the corresponding Jira issue
       const jiraIssue = await findJiraIssue(ghIssue.url, jiraIssues.issues);
+      await delay(1000);
 
       if (!jiraIssue) {
         // Create new Jira issue
@@ -44,10 +46,12 @@ async function syncIssues() {
           `Creating new Jira issue for GitHub issue #${ghIssue.number}`
         );
         await createJiraIssue(ghIssue, jiraIssues.issues);
+        await delay(1000);
       } else {
         // Update existing Jira issue
         console.log(`Updating existing Jira issue: ${jiraIssue.key}...`);
         await updateJiraIssue(jiraIssue, ghIssue, jiraIssues.issues);
+        await delay(1000);
         processedJiraIssues.add(jiraIssue.key);
       }
     }
