@@ -3,6 +3,7 @@ import { jiraClient, repoIssues, delay } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
+import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
 
 async function syncIssues() {
@@ -29,29 +30,26 @@ async function syncIssues() {
     const processedJiraIssues = new Set();
 
     // Process GitHub issues
-    for (const ghIssue of githubIssues) {
+    for (const issue of githubIssues) {
       // Skip if the issue is a pull request (GraphQL doesn't return pull requests)
-      if (ghIssue.pull_request) {
-        console.log(`Skipping pull request #${ghIssue.number}`);
+      if (issue.pull_request) {
+        console.log(`Skipping pull request #${issue.number}`);
         continue;
       }
 
       // Find the corresponding Jira issue
-      const jiraIssue = await findJiraIssue(ghIssue.url, jiraIssues.issues);
-      await delay(1000);
+      const jiraIssue = await findJiraIssue(issue.url);
 
       if (!jiraIssue) {
         // Create new Jira issue
         console.log(
-          `Creating new Jira issue for GitHub issue #${ghIssue.number}`
+          `Creating new Jira issue for GitHub issue #${issue.number}`
         );
-        await createJiraIssue(ghIssue, jiraIssues.issues);
-        await delay(1000);
+        await createJiraIssue(issue);
       } else {
         // Update existing Jira issue
         console.log(`Updating existing Jira issue: ${jiraIssue.key}...`);
-        await updateJiraIssue(jiraIssue, ghIssue, jiraIssues.issues);
-        await delay(1000);
+        await updateJiraIssue(jiraIssue, issue);
         processedJiraIssues.add(jiraIssue.key);
       }
     }

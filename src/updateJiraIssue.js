@@ -1,83 +1,120 @@
 import { buildJiraIssueData, jiraClient, delay } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createSubTasks } from './createJiraIssue.js';
-import { findJiraIssue, fetchJiraIssue } from './findJiraIssue.js';
+import { findJiraIssue } from './findJiraIssue.js';
 
-export async function updateSubTasks(parentJiraKey, githubIssue, jiraIssues) {
-  const subIssues = githubIssue.subIssues.nodes;
-  // Three options for matching GH subIssue to Jira issue:
-  // 1. Existing Jira issue matched to GH subIssue from existing component jiraIssues array
-  // 2. Existing Jira issue matched to GH subIssue from different component via additional fetch call
-  // 3. No existing Jira match; create a new Jira issue for the github subIssue
-
-  for (const subIssue of subIssues) {
-    // First check for existing Jira issue matched to GH subIssue from existing component jiraIssues
-    let existingJiraIssue = findJiraIssue(subIssue.url, jiraIssues);
-
-    if (existingJiraIssue) {
-      // Log the existing Jira issue found
-      console.log(
-        `Found existing Jira issue ${existingJiraIssue.key} for sub-issue ${subIssue.url}`
-      );
-    } else {
-      // If no match found from component jiraIssues, try to fetch Jira issue across any components
-      existingJiraIssue = await fetchJiraIssue(subIssue.url);
-      await delay(1000);
-      if (existingJiraIssue) {
-        // Log the existing Jira issue found
-        console.log(
-          `Fetched existing Jira issue ${existingJiraIssue.key} for sub-issue ${subIssue.url}`
-        );
-      }
-    }
-    // Create var to store Jira subissue to link back to parentJiraKey
-    let subIssueKey;
-    if (existingJiraIssue) {
-      // If an existing Jira issue is found, link it to the parent Jira issue
-      subIssueKey = existingJiraIssue.key;
-    } else {
-      // No existing match: create a new Jira issue for the github subIssue & link it back to parent Jira issue
-      try {
-        subIssueKey = await createSubTasks(parentJiraKey, subIssue);
-        await delay(1000);
-        console.log(
-          `Created new Jira issue ${subIssueKey} for sub-issue ${subIssue.url}`
-        );
-      } catch (error) {
-        console.error(
-          `Error creating Jira sub-issue for GH sub-issue ${subIssue.url}:`,
-          error.message,
-          { error }
-        );
-        continue; // Skip to next sub-issue if creation fails
-      }
-    }
-    // Create the issues link
-    // inward = parent, outward = sub-issue
-    await jiraClient.post(`/rest/api/3/issuelink`, {
-      comment: {
-        body: `Linking sub-issue ${subIssue.url} to parent Jira issue ${parentJiraKey}`,
-      },
-      inwardIssue: {
-        key: parentJiraKey,
-      },
-      outwardIssue: {
-        key: subIssueKey,
-      },
-      type: {
-        name: 'Incorporates',
+async function findSubTasks(jiraIssueKey) {
+  try {
+    const response = await jiraClient.get('/rest/api/2/search', {
+      params: {
+        jql: `parent = ${jiraIssueKey}`,
+        fields: 'key,description',
       },
     });
-    await delay(1000);
+    return response.data.issues;
+  } catch (error) {
+    console.error('Error finding sub-tasks:', error.message, { error });
+    return [];
   }
 }
 
-export async function updateJiraIssue(jiraIssue, githubIssue, jiraIssues) {
+export async function updateSubTasks(parentJiraKey, githubIssue) {
+  try {
+    // Get existing sub-tasks
+    const existingSubTasks = await findSubTasks(parentJiraKey);
+    const existingSubTaskMap = new Map(
+      existingSubTasks
+        .map((task) => {
+          const match = task.fields.description.match(/Upstream URL: (.*)/);
+          return match ? [match[1], task] : null;
+        })
+        .filter(Boolean)
+    );
+
+    // Check if there are subissues
+    if (githubIssue.subIssues.totalCount > 0) {
+      // Get sub-issues from the GraphQL response
+      const subIssues = githubIssue.subIssues.nodes;
+
+      // Update or create sub-tasks
+      for (const subIssue of subIssues) {
+        const existingTask = existingSubTaskMap.get(subIssue.url);
+
+        if (existingTask) {
+          // Update existing sub-task
+          const subtask = {
+            fields: {
+              summary: `GitHub: ${subIssue.title}`,
+              description: `GH Issue ${subIssue.number}\nGH ID ${
+                subIssue.id
+              }\nUpstream URL: ${subIssue.url}\nRepo: ${
+                subIssue.repository.nameWithOwner
+              }\n\n----\n\n*Description:*\n${subIssue.body || ''}`,
+            },
+          };
+          await jiraClient.put(
+            `/rest/api/2/issue/${existingTask.key}`,
+            subtask
+          );
+          console.log(
+            `Updated sub-task ${existingTask.key} for GitHub issue #${subIssue.number}`
+          );
+          existingSubTaskMap.delete(subIssue.url);
+        } else {
+          // check if issue exists and needs to be flagged as subtask
+          // Find the corresponding Jira issue
+          const jiraIssue = await findJiraIssue(subIssue.url);
+
+          if (!jiraIssue) {
+            // Create new Jira issue
+            console.log(
+              `Creating new Jira issue as sub-task for GitHub issue #${issue.number}`
+            );
+            // Create new sub-task
+            await createSubTasks(parentJiraKey, subIssue);
+          } else {
+            // Update existing Jira issue
+            console.log(
+              `Updating existing Jira issue as sub-task: ${jiraIssue.key}...`
+            );
+            await updateJiraIssue(jiraIssue, subIssue);
+            processedJiraIssues.add(jiraIssue.key);
+          }
+        }
+      }
+    }
+
+    // Close any remaining sub-tasks that no longer exist in GitHub
+    for (const [_, task] of existingSubTaskMap) {
+      await transitionJiraIssue(task.key, 'Done');
+      console.log(
+        `Closed sub-task ${task.key} as it no longer exists in GitHub`
+      );
+    }
+  } catch (error) {
+    console.error('Error updating sub-tasks:', error.message, { error });
+  }
+}
+
+export async function updateJiraIssue(jiraIssue, githubIssue) {
   try {
     const jiraIssueData = buildJiraIssueData(githubIssue, true);
     console.log(`Updating Jira issue ${jiraIssue.key}...`);
     await jiraClient.put(`/rest/api/2/issue/${jiraIssue.key}`, jiraIssueData);
-    await delay(1000);
+
+    // Add remote link to GitHub issue
+    await jiraClient.post(`/rest/api/2/issue/${jiraIssue.key}/remotelink`, {
+      globalId: `github-${githubIssue.id}`,
+      application: {
+        type: 'com.github',
+        name: 'GitHub',
+      },
+      relationship: 'clones',
+      object: {
+        url: githubIssue.url,
+        title: githubIssue.title,
+      },
+    });
 
     // Check if Jira issue is closed, needs to be reopened
     if (jiraIssue.fields.status.name === 'Closed') {
@@ -88,12 +125,8 @@ export async function updateJiraIssue(jiraIssue, githubIssue, jiraIssues) {
       await delay(1000);
     }
 
-    // Update sub-issues if they exist
-    if (githubIssue.subIssues.totalCount > 0) {
-      console.log('Updating sub-tasks for Jira issue:', jiraIssue.key);
-      await updateSubTasks(jiraIssue.key, githubIssue, jiraIssues);
-      await delay(1000);
-    }
+    // Update sub-tasks
+    await updateSubTasks(jiraIssue.key, githubIssue);
 
     console.log(
       `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}`

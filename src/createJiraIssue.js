@@ -29,7 +29,7 @@ export async function createSubTasks(parentJiraKey, subIssue) {
           subIssue?.body || ''
         }`,
         issuetype: {
-          name: 'Story',
+          name: 'Sub-task',
         },
         parent: {
           key: parentJiraKey,
@@ -60,16 +60,13 @@ export async function createSubTasks(parentJiraKey, subIssue) {
         title: subIssue.url,
       },
     });
-    await delay(1000);
-    return response.data.key;
   } catch (error) {
     console.error('Error creating sub-tasks:', error.message, { error });
   }
 }
 
-export async function createJiraIssue(githubIssue, jiraIssues) {
+export async function createJiraIssue(githubIssue) {
   try {
-    // Create the new issue
     const jiraIssue = buildJiraIssueData(githubIssue);
     const response = await jiraClient.post('/rest/api/2/issue', jiraIssue);
     await delay(1000);
@@ -77,7 +74,7 @@ export async function createJiraIssue(githubIssue, jiraIssues) {
       `Created Jira issue ${response.data.key} for GitHub issue #${githubIssue.number}`
     );
 
-    // Add remote link back to original GitHub issue
+    // Add remote link to GitHub issue
     await jiraClient.post(`/rest/api/2/issue/${response.data.key}/remotelink`, {
       globalId: `github-${githubIssue.id}`,
       application: {
@@ -86,15 +83,14 @@ export async function createJiraIssue(githubIssue, jiraIssues) {
       },
       relationship: 'clones',
       object: {
-        url: githubIssue.url,
-        title: githubIssue.url,
+        url: githubIssue.html_url,
+        title: githubIssue.html_url,
       },
     });
     await delay(1000);
     if (githubIssue.subIssues.totalCount > 0) {
-      // Create "incorporates" remotelinks for any sub-issues
-      await updateSubTasks(response.data.key, githubIssue, jiraIssues);
-      await delay(1000);
+      // Create sub-tasks for any sub-issues
+      await updateSubTasks(response.data.key, githubIssue);
     }
 
     return response.data;
