@@ -3,6 +3,7 @@ import {
   getJiraIssueType,
   getJiraComponent,
   createNewJiraIssue,
+  syncCommentsToJira,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
 
@@ -34,7 +35,7 @@ export async function createChildIssues(
           subIssue?.body || ''
         }`,
         issuetype: {
-          name: jiraIssueType,
+          id: jiraIssueType,
         },
         parent: {
           key: parentJiraKey,
@@ -50,6 +51,11 @@ export async function createChildIssues(
     if (isEpic) {
       // Epic Link custom field is required for epic child issues
       childIssue.fields['customfield_12311140'] = parentJiraKey;
+    } else {
+      // If parent is not an epic, child can only be a sub-task
+      childIssue.fields.issuetype = {
+        id: 5,
+      };
     }
 
     // Create new Jira issue & add remote link to GitHub issue
@@ -57,6 +63,15 @@ export async function createChildIssues(
     console.log(
       ` - Created child issue ${newJiraKey} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
     );
+
+    // Sync comments for the child issue
+    if (subIssue.comments?.totalCount > 0) {
+      console.log(
+        ` - Found ${subIssue.comments.totalCount} total comments for child issue ${newJiraKey}...`
+      );
+      await syncCommentsToJira(newJiraKey, subIssue.comments);
+    }
+
     return newJiraKey;
   } catch (error) {
     console.error('Error creating child issues:', error.message, { error });
@@ -67,14 +82,24 @@ export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
     const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
-    console.log(
-      `Created Jira issue ${newJiraKey} for GitHub issue #${githubIssue.number}\n`
-    );
+
+    // Sync comments for new issue
+    if (githubIssue.comments.totalCount > 0) {
+      console.log(
+        ` - Found ${githubIssue.comments.totalCount} total comments for new issue ${newJiraKey}...`
+      );
+      await syncCommentsToJira(newJiraKey, githubIssue.comments);
+    }
+
+    // Create child issues for any sub-issues
     if (githubIssue.subIssues.totalCount > 0) {
-      // Create child issues for any sub-issues
       const isEpic = jiraIssue.fields.issuetype.id === 16;
       await updateChildIssues(newJiraKey, githubIssue, isEpic);
     }
+
+    console.log(
+      `Created Jira issue ${newJiraKey} for GitHub issue #${githubIssue.number}\n`
+    );
   } catch (error) {
     console.error(
       'Error creating Jira issue:',

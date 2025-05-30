@@ -3,6 +3,8 @@ import {
   jiraClient,
   editJiraIssue,
   delay,
+  syncCommentsToJira,
+  addRemoteLinkToJiraIssue,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
@@ -47,7 +49,14 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
         const currentChildIssue = existingChildIssuesMap.get(subIssue.url);
 
         if (currentChildIssue) {
-          // No need to edit, that's captured through the updates to that issue
+          // Sync comments for the existing child issue
+          if (subIssue.comments?.totalCount > 0) {
+            console.log(
+              ` - Found ${subIssue.comments.totalCount} total comments for child issue ${currentChildIssue.key}...`
+            );
+            await syncCommentsToJira(currentChildIssue.key, subIssue.comments);
+          }
+
           existingChildIssuesMap.delete(subIssue.url);
         } else {
           // check if issue exists and needs to be flagged as child issue
@@ -68,7 +77,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               ` - ChildIssue: Completed creating new Jira ${newJiraKey} as child of ${parentJiraKey} (GH #${subIssue.number})`
             );
           } else {
-            // Update existing Jira issue to link it as a child of the parent Jira issue
+            // Update existing Jira issue to link it as a child of the parent Jira issue
             console.log(
               ` - ChildIssue: Updating existing Jira ${jiraIssue.key} to update as child (GH #${subIssue.number})...`
             );
@@ -82,8 +91,23 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               updatedData.fields.parent = {
                 key: parentJiraKey,
               };
+              // and set issue type to sub-task
+              // TODO: this is throwing an error when trying to update the issuetype
+              // updatedData.fields.issuetype = {
+              //   name: 'Sub-task',
+              //   id: 5,
+              // };
             }
             await editJiraIssue(jiraIssue.key, updatedData);
+
+            // Sync comments for the existing issue being converted to a child
+            if (subIssue.comments?.totalCount > 0) {
+              console.log(
+                ` - Found ${subIssue.comments.totalCount} total comments for child issue ${jiraIssue.key}...`
+              );
+              await syncCommentsToJira(jiraIssue.key, subIssue.comments);
+            }
+
             console.log(
               ` - ChildIssue: Completed updating existing Jira ${jiraIssue.key} to child of ${parentJiraKey} (GH #${subIssue.number})`
             );
@@ -109,19 +133,15 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
     const jiraIssueData = buildJiraIssueData(githubIssue, true);
     await editJiraIssue(jiraIssue.key, jiraIssueData);
 
-    // Add remote link to GitHub issue
-    await jiraClient.post(`/rest/api/2/issue/${jiraIssue.key}/remotelink`, {
-      globalId: `github-${githubIssue.id}`,
-      application: {
-        type: 'com.github',
-        name: 'GitHub',
-      },
-      relationship: 'clones',
-      object: {
-        url: githubIssue.url,
-        title: githubIssue.title,
-      },
-    });
+    addRemoteLinkToJiraIssue(jiraIssue.key, githubIssue);
+
+    // Sync comments
+    if (githubIssue.comments.totalCount > 0) {
+      console.log(
+        ` - Found ${githubIssue.comments.totalCount} total comments for issue ${jiraIssue.key}...`
+      );
+      await syncCommentsToJira(jiraIssue.key, githubIssue.comments);
+    }
 
     // Check if Jira issue is closed, needs to be reopened
     if (jiraIssue.fields.status.name === 'Closed') {

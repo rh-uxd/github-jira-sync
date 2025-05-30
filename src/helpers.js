@@ -28,7 +28,7 @@ export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
     relationship: 'clones',
     object: {
       url: githubIssue.url,
-      title: githubIssue.url,
+      title: githubIssue.title,
     },
   });
   return jiraIssueKey;
@@ -291,6 +291,18 @@ export const GET_ALL_REPO_ISSUES = `
                   name
                 }
               }
+              comments(first: $numCommentsPerIssue, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                nodes {
+                  author {
+                    login
+                  }
+                  body
+                  createdAt
+                  updatedAt
+                  url
+                }
+                totalCount
+              }
             }
             totalCount
           }
@@ -342,6 +354,7 @@ export const GET_ISSUE_DETAILS = `
             bodyText
             createdAt
             updatedAt
+            url
           }
           totalCount
         }
@@ -370,6 +383,18 @@ export const GET_ISSUE_DETAILS = `
                 name
               }
             }
+            comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+              nodes {
+                author {
+                  login
+                }
+                bodyText
+                createdAt
+                updatedAt
+                url
+              }
+              totalCount
+            }
           }
           totalCount
         }
@@ -382,3 +407,66 @@ export const repoIssues = executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
   owner: process.env.GITHUB_OWNER,
   repo: process.env.GITHUB_REPO,
 });
+
+export async function syncCommentsToJira(jiraIssueKey, githubComments) {
+  try {
+    // Get existing comments from Jira
+    const { data: jiraComments } = await jiraClient.get(
+      `/rest/api/2/issue/${jiraIssueKey}/comment`
+    );
+    await delay(1000);
+
+    // Create a map of existing comments by their GitHub URL
+    const existingComments = new Map(
+      jiraComments.comments
+        .map((comment) => {
+          const githubUrlMatch = comment.body.match(/Comment URL: (.*)/);
+          return githubUrlMatch ? [githubUrlMatch[1], comment] : null;
+        })
+        .filter(Boolean)
+    );
+
+    // Process each GitHub comment
+    let addedCommentCount = 0;
+    for (const comment of githubComments.nodes) {
+      // Skip if comment already exists in Jira
+      if (existingComments.has(comment.url)) {
+        existingComments.delete(comment.url);
+        continue;
+      }
+
+      // Format the comment body with GitHub metadata
+      const commentBody =
+        `${comment.body}\n\n----\n\n` +
+        `Author: ${comment.author.login}\n` +
+        `Created: ${comment.createdAt}\n` +
+        `Updated: ${comment.updatedAt}\n` +
+        `Comment URL: ${comment.url}\n`;
+
+      // Add the comment to Jira
+      await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/comment`, {
+        body: commentBody,
+      });
+      addedCommentCount++;
+      await delay(1000);
+      console.log(
+        ` - Added comment from ${comment.author.login} to Jira issue ${jiraIssueKey}`
+      );
+    }
+
+    // Remove any comments that no longer exist in GitHub
+    for (const [_, comment] of existingComments) {
+      await jiraClient.delete(
+        `/rest/api/2/issue/${jiraIssueKey}/comment/${comment.id}`
+      );
+      await delay(1000);
+      console.log(
+        ` - Removed outdated comment from Jira issue ${jiraIssueKey}`
+      );
+    }
+
+    console.log(` - Completed syncing ${addedCommentCount} new comments.`);
+  } catch (error) {
+    console.error('Error syncing comments:', error.message, { error });
+  }
+}
