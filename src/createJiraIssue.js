@@ -1,21 +1,26 @@
 import {
   buildJiraIssueData,
-  jiraClient,
+  getJiraIssueType,
   getJiraComponent,
-  delay,
+  createNewJiraIssue,
 } from './helpers.js';
-import { updateSubTasks } from './updateJiraIssue.js';
+import { updateChildIssues } from './updateJiraIssue.js';
 
-export async function createSubTasks(parentJiraKey, subIssue) {
+export async function createChildIssues(
+  parentJiraKey,
+  subIssue,
+  isEpic = false
+) {
   try {
-    // Each sub-issue is a Jira sub-task
+    // Each sub-issue is a Jira child issue
     // Extract repo name from the repository object
     const [repoOwner, repoName] = subIssue.repository.nameWithOwner.split('/');
     const jiraComponent = getJiraComponent(repoName);
     const componentsArr = jiraComponent ? [jiraComponent] : null;
+    const jiraIssueType = getJiraIssueType(subIssue.issueType).id;
 
-    // Create sub-task in Jira
-    const subtask = {
+    // Create child issue in Jira
+    const childIssue = {
       fields: {
         project: {
           key: process.env.JIRA_PROJECT_KEY,
@@ -29,7 +34,7 @@ export async function createSubTasks(parentJiraKey, subIssue) {
           subIssue?.body || ''
         }`,
         issuetype: {
-          name: 'Sub-task',
+          name: jiraIssueType,
         },
         parent: {
           key: parentJiraKey,
@@ -39,61 +44,37 @@ export async function createSubTasks(parentJiraKey, subIssue) {
 
     if (componentsArr) {
       // Only pass component if it exists
-      subtask.fields.components = componentsArr;
+      childIssue.fields.components = componentsArr;
     }
 
-    const response = await jiraClient.post('/rest/api/2/issue', subtask);
-    await delay(1000);
+    if (isEpic) {
+      // Epic Link custom field is required for epic child issues
+      childIssue.fields['customfield_12311140'] = parentJiraKey;
+    }
+
+    // Create new Jira issue & add remote link to GitHub issue
+    const newJiraKey = await createNewJiraIssue(childIssue, subIssue);
     console.log(
-      `Created sub-task ${response.data.key} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
+      ` - Created child issue ${newJiraKey} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
     );
-    // Add remote link to GitHub issue
-    await jiraClient.post(`/rest/api/2/issue/${response.data.key}/remotelink`, {
-      globalId: `github-${subIssue.id}`,
-      application: {
-        type: 'com.github',
-        name: 'GitHub',
-      },
-      relationship: 'clones',
-      object: {
-        url: subIssue.url,
-        title: subIssue.url,
-      },
-    });
+    return newJiraKey;
   } catch (error) {
-    console.error('Error creating sub-tasks:', error.message, { error });
+    console.error('Error creating child issues:', error.message, { error });
   }
 }
 
 export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
-    const response = await jiraClient.post('/rest/api/2/issue', jiraIssue);
-    await delay(1000);
+    const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
     console.log(
-      `Created Jira issue ${response.data.key} for GitHub issue #${githubIssue.number}`
+      `Created Jira issue ${newJiraKey} for GitHub issue #${githubIssue.number}\n`
     );
-
-    // Add remote link to GitHub issue
-    await jiraClient.post(`/rest/api/2/issue/${response.data.key}/remotelink`, {
-      globalId: `github-${githubIssue.id}`,
-      application: {
-        type: 'com.github',
-        name: 'GitHub',
-      },
-      relationship: 'clones',
-      object: {
-        url: githubIssue.html_url,
-        title: githubIssue.html_url,
-      },
-    });
-    await delay(1000);
     if (githubIssue.subIssues.totalCount > 0) {
-      // Create sub-tasks for any sub-issues
-      await updateSubTasks(response.data.key, githubIssue);
+      // Create child issues for any sub-issues
+      const isEpic = jiraIssue.fields.issuetype.id === 16;
+      await updateChildIssues(newJiraKey, githubIssue, isEpic);
     }
-
-    return response.data;
   } catch (error) {
     console.error(
       'Error creating Jira issue:',

@@ -3,7 +3,6 @@ import { jiraClient, repoIssues, delay } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
-import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
 
 async function syncIssues() {
@@ -23,7 +22,7 @@ async function syncIssues() {
     const githubIssues = githubApiResponse.repository.issues.nodes;
 
     console.log(
-      `Found ${jiraIssues.issues.length} Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} GitHub issues`
+      `** Found ${jiraIssues.issues.length} Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} GitHub issues **\n`
     );
 
     // Keep track of which Jira issues we've processed

@@ -1,9 +1,14 @@
-import { buildJiraIssueData, jiraClient, delay } from './helpers.js';
+import {
+  buildJiraIssueData,
+  jiraClient,
+  editJiraIssue,
+  delay,
+} from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
-import { createSubTasks } from './createJiraIssue.js';
+import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
 
-async function findSubTasks(jiraIssueKey) {
+async function findChildIssues(jiraIssueKey) {
   try {
     const response = await jiraClient.get('/rest/api/2/search', {
       params: {
@@ -13,94 +18,96 @@ async function findSubTasks(jiraIssueKey) {
     });
     return response.data.issues;
   } catch (error) {
-    console.error('Error finding sub-tasks:', error.message, { error });
+    console.error('Error finding child issues:', error.message, { error });
     return [];
   }
 }
 
-export async function updateSubTasks(parentJiraKey, githubIssue) {
+export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
   try {
-    // Get existing sub-tasks
-    const existingSubTasks = await findSubTasks(parentJiraKey);
-    const existingSubTaskMap = new Map(
-      existingSubTasks
-        .map((task) => {
-          const match = task.fields.description.match(/Upstream URL: (.*)/);
-          return match ? [match[1], task] : null;
+    // Get existing child issues
+    const existingChildIssues = await findChildIssues(parentJiraKey);
+    const existingChildIssuesMap = new Map(
+      existingChildIssues
+        .map((childIssue) => {
+          const match =
+            childIssue.fields.description.match(/Upstream URL: (.*)/);
+          return match ? [match[1], childIssue] : null;
         })
         .filter(Boolean)
     );
 
     // Check if there are subissues
-    if (githubIssue.subIssues.totalCount > 0) {
+    if (githubIssue?.subIssues?.totalCount > 0) {
       // Get sub-issues from the GraphQL response
       const subIssues = githubIssue.subIssues.nodes;
 
-      // Update or create sub-tasks
+      // Update or create child issues
       for (const subIssue of subIssues) {
-        const existingTask = existingSubTaskMap.get(subIssue.url);
+        const currentChildIssue = existingChildIssuesMap.get(subIssue.url);
 
-        if (existingTask) {
-          // Update existing sub-task
-          const subtask = {
-            fields: {
-              summary: `GitHub: ${subIssue.title}`,
-              description: `GH Issue ${subIssue.number}\nGH ID ${
-                subIssue.id
-              }\nUpstream URL: ${subIssue.url}\nRepo: ${
-                subIssue.repository.nameWithOwner
-              }\n\n----\n\n*Description:*\n${subIssue.body || ''}`,
-            },
-          };
-          await jiraClient.put(
-            `/rest/api/2/issue/${existingTask.key}`,
-            subtask
-          );
-          console.log(
-            `Updated sub-task ${existingTask.key} for GitHub issue #${subIssue.number}`
-          );
-          existingSubTaskMap.delete(subIssue.url);
+        if (currentChildIssue) {
+          // No need to edit, that's captured through the updates to that issue
+          existingChildIssuesMap.delete(subIssue.url);
         } else {
-          // check if issue exists and needs to be flagged as subtask
+          // check if issue exists and needs to be flagged as child issue
           // Find the corresponding Jira issue
           const jiraIssue = await findJiraIssue(subIssue.url);
 
           if (!jiraIssue) {
-            // Create new Jira issue
+            // Create new child issue
             console.log(
-              `Creating new Jira issue as sub-task for GitHub issue #${issue.number}`
+              ` - ChildIssue: Creating new Jira issue as child (GH #${subIssue.number})...`
             );
-            // Create new sub-task
-            await createSubTasks(parentJiraKey, subIssue);
+            const newJiraKey = await createChildIssues(
+              parentJiraKey,
+              subIssue,
+              isEpic
+            );
+            console.log(
+              ` - ChildIssue: Completed creating new Jira ${newJiraKey} as child of ${parentJiraKey} (GH #${subIssue.number})`
+            );
           } else {
-            // Update existing Jira issue
+            // Update existing Jira issue to link it as a child of the parent Jira issue
             console.log(
-              `Updating existing Jira issue as sub-task: ${jiraIssue.key}...`
+              ` - ChildIssue: Updating existing Jira ${jiraIssue.key} to update as child (GH #${subIssue.number})...`
             );
-            await updateJiraIssue(jiraIssue, subIssue);
-            processedJiraIssues.add(jiraIssue.key);
+            // Conditionally update issue based on if it's a child of an epic
+            const updatedData = { fields: {} };
+            if (isEpic) {
+              // If child of epic, set customfield 12311140 used for required epic link
+              updatedData.fields['customfield_12311140'] = parentJiraKey;
+            } else {
+              // If not child of epic, set parent field
+              updatedData.fields.parent = {
+                key: parentJiraKey,
+              };
+            }
+            await editJiraIssue(jiraIssue.key, updatedData);
+            console.log(
+              ` - ChildIssue: Completed updating existing Jira ${jiraIssue.key} to child of ${parentJiraKey} (GH #${subIssue.number})`
+            );
           }
         }
       }
     }
 
-    // Close any remaining sub-tasks that no longer exist in GitHub
-    for (const [_, task] of existingSubTaskMap) {
-      await transitionJiraIssue(task.key, 'Done');
+    // Close any remaining Jira child issues that no longer exist in GitHub
+    for (const [_, child] of existingChildIssuesMap) {
+      await transitionJiraIssue(child.key, 'Done');
       console.log(
-        `Closed sub-task ${task.key} as it no longer exists in GitHub`
+        ` - Closed child issue ${child.key} as it's no longer open in GitHub`
       );
     }
   } catch (error) {
-    console.error('Error updating sub-tasks:', error.message, { error });
+    console.error('Error updating child issues:', error.message, { error });
   }
 }
 
 export async function updateJiraIssue(jiraIssue, githubIssue) {
   try {
     const jiraIssueData = buildJiraIssueData(githubIssue, true);
-    console.log(`Updating Jira issue ${jiraIssue.key}...`);
-    await jiraClient.put(`/rest/api/2/issue/${jiraIssue.key}`, jiraIssueData);
+    await editJiraIssue(jiraIssue.key, jiraIssueData);
 
     // Add remote link to GitHub issue
     await jiraClient.post(`/rest/api/2/issue/${jiraIssue.key}/remotelink`, {
@@ -125,11 +132,12 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       await delay(1000);
     }
 
-    // Update sub-tasks
-    await updateSubTasks(jiraIssue.key, githubIssue);
+    // Update child issues
+    const isEpic = jiraIssueData.fields.issuetype.id === 16;
+    await updateChildIssues(jiraIssue.key, githubIssue, isEpic);
 
     console.log(
-      `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}`
+      `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}\n`
     );
   } catch (error) {
     console.error(

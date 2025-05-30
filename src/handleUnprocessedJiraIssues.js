@@ -1,4 +1,9 @@
-import { octokit, delay } from './helpers.js';
+import {
+  octokit,
+  delay,
+  executeGraphQLQuery,
+  GET_ISSUE_DETAILS,
+} from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 
 // Additional check only for unprocessed Jira issues
@@ -10,19 +15,22 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
 
   for (const jiraIssue of unprocessedJiraIssues) {
     // Extract GitHub issue number from description
-    const githubIdMatch = jiraIssue.fields.description.match(/GH Issue (\d+)/);
+    const githubIdMatch = jiraIssue.fields.description
+      .match(/Upstream URL: (.+)/)[1]
+      .split('/')
+      .pop();
+
     if (githubIdMatch) {
-      const githubNumber = parseInt(githubIdMatch[1]);
+      const githubNumber = parseInt(githubIdMatch);
       try {
         // Get issue details using GraphQL
-        const response = await octokit.graphql(GET_ISSUE_DETAILS, {
+        const response = await executeGraphQLQuery(GET_ISSUE_DETAILS, {
           owner: process.env.GITHUB_OWNER,
           repo: process.env.GITHUB_REPO,
           issueNumber: githubNumber,
         });
 
         const githubIssue = response.repository.issue;
-
         // If GH is closed and Jira is not, transition Jira to Closed
         if (
           githubIssue.state === 'CLOSED' &&

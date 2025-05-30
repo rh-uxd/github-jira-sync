@@ -17,6 +17,38 @@ export const jiraClient = axios.create({
   },
 });
 
+export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
+  // Add remote link to GitHub issue
+  await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/remotelink`, {
+    globalId: `github-${githubIssue.id}`,
+    application: {
+      type: 'com.github',
+      name: 'GitHub',
+    },
+    relationship: 'clones',
+    object: {
+      url: githubIssue.url,
+      title: githubIssue.url,
+    },
+  });
+  return jiraIssueKey;
+}
+
+export async function createNewJiraIssue(jiraIssueData, githubIssue) {
+  const jiraKey = await jiraClient
+    .post('/rest/api/2/issue', jiraIssueData)
+    .then(
+      async (response) =>
+        await addRemoteLinkToJiraIssue(response.data.key, githubIssue)
+    );
+  await delay(1000);
+  return jiraKey;
+}
+
+export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
+  await jiraClient.put(`/rest/api/2/issue/${jiraIssueKey}`, jiraIssueData);
+}
+
 export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const userMappings = {
@@ -24,17 +56,54 @@ const userMappings = {
 };
 // Map GitHub issue type to Jira issue type
 const issueTypeMappings = {
-  Bug: 'Bug',
-  Epic: 'Epic',
-  Task: 'Task',
-  Feature: 'Story',
-  DevX: 'Task',
-  Documentation: 'Story',
-  Demo: 'Story',
-  Support: 'Story',
-  'Tech debt': 'Task',
-  Initiative: 'Feature',
+  Bug: {
+    jiraName: 'Bug',
+    id: 1,
+  },
+  Epic: {
+    jiraName: 'Epic',
+    id: 16,
+  },
+  Task: {
+    jiraName: 'Task',
+    id: 3,
+  },
+  Feature: {
+    jiraName: 'Story',
+    id: 17,
+  },
+  DevX: {
+    jiraName: 'Task',
+    id: 3,
+  },
+  Documentation: {
+    jiraName: 'Story',
+    id: 17,
+  },
+  Demo: {
+    jiraName: 'Story',
+    id: 17,
+  },
+  'Tech debt': {
+    jiraName: 'Task',
+    id: 3,
+  },
+  Initiative: {
+    jiraName: 'Epic',
+    id: 16,
+  },
+  SubTask: {
+    jiraName: 'Sub-task',
+    id: 5,
+  },
+  default: {
+    jiraName: 'Story',
+    id: 17,
+  },
 };
+
+export const getJiraIssueType = (ghIssueType) =>
+  issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 const availableComponents = [
   'AI-infra-ui-components',
@@ -92,48 +161,40 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   // Map assignees from GraphQL structure
   const assigneeLogins = assignees.nodes.map((a) => a.login);
   const jiraAssignee = userMappings[assigneeLogins[0]] || '';
-  const jiraIssueType = issueTypeMappings[issueType?.name] || 'Story';
+  const jiraIssueType = getJiraIssueType(issueType);
 
   // build the Jira issue object to create/update Jira with
   // Updating an issue allows fewer fields than creating new issue
-  const jiraIssue = isUpdateIssue
-    ? {
-        fields: {
-          summary: title,
-          description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
-            ', '
-          )}\n\n----\n\n*Description:*\n${body || ''}`,
-          labels: ['GitHub', ...jiraLabels],
-          assignee: { name: jiraAssignee },
-          components: [
-            {
-              name: jiraComponent,
-            },
-          ],
+  const jiraIssue = {
+    fields: {
+      summary: title,
+      description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
+        ', '
+      )}\n\n----\n\n*Description:*\n${body || ''}`,
+      labels: ['GitHub', ...jiraLabels],
+      assignee: { name: jiraAssignee },
+      issuetype: {
+        id: jiraIssueType.id,
+      },
+      components: [
+        {
+          name: jiraComponent,
         },
-      }
-    : {
-        fields: {
-          project: {
-            key: process.env.JIRA_PROJECT_KEY,
-          },
-          summary: title,
-          description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
-            ', '
-          )}\n\n----\n\n*Description:*\n${body || ''}`,
-          issuetype: {
-            name: jiraIssueType,
-          },
-          labels: ['GitHub', ...jiraLabels],
-          assignee: { name: jiraAssignee },
-          components: [
-            {
-              name: jiraComponent,
-            },
-          ],
-          [jiraIssueType === 'Epic' ? 'customfield_12311141' : '']: title, // Epic name field is required
-        },
-      };
+      ],
+    },
+  };
+
+  // Epic name field is required if issue type is Epic
+  if (jiraIssueType.jiraName === 'Epic') {
+    jiraIssue.fields['customfield_12311141'] = title;
+  }
+
+  // Add extra fields for new issues
+  if (!isUpdateIssue) {
+    jiraIssue.fields.project = {
+      key: process.env.JIRA_PROJECT_KEY,
+    };
+  }
 
   return jiraIssue;
 };
@@ -205,12 +266,18 @@ export const GET_ALL_REPO_ISSUES = `
             }
             totalCount
           }
+          parent {
+            url
+          }
           subIssues(first: $numSubIssuesPerIssue) {
             nodes {
               title
               url
               state
               number
+              issueType {
+                name
+              }
               repository {
                 nameWithOwner
               }
@@ -278,12 +345,18 @@ export const GET_ISSUE_DETAILS = `
           }
           totalCount
         }
+        parent {
+          url
+        }
         subIssues(first: 50) {
           nodes {
             state
             title
             url
             number
+            issueType {
+              name
+            }
             repository {
               nameWithOwner
             }
