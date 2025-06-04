@@ -53,8 +53,45 @@ export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
 
 export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const userMappings = {
+const platformTeamUsers = {
+  nicolethoen: 'nthoen',
+  dlabaj: 'dlabaj',
+  rebeccaalpert: 'ralpert@redhat.com',
+  mcoker: 'michaelcoker',
+  'wise-king-sullyman': 'ausulliv@redhat.com',
+  sg00dwin: 'sgoodwin_redhat',
+  thatblindgeye: 'eolkowsk@redhat.com',
+  kmcfaul: 'knmcfaul',
+  srambach: 'srambach',
+  parthivrh: 'parthivk',
+};
+
+const enablementTeamUsers = {
+  mattnolting: 'rhn-support-mnolting',
+  jpuzz0: 'jpuzzo@redhat.com',
+  'jeff-phillips-18': 'jephilli@redhat.com',
+  jschuler: 'jschuler_kafka_devexp',
   evwilkin: 'ewilkins@redhat.com',
+  cdcabrera: 'cdcabrera',
+  dlabrecq: 'dlabrecq@redhat.com',
+  'jenny-s51': 'eug3nia',
+  mfrances17: 'mfrances',
+  gitdallas: 'dnicol@redhat.com',
+  tlabaj: 'tlabaj@redhat.com',
+};
+
+const designTeamUsers = {
+  'andrew-ronaldson': 'aronaldson',
+  lboehling: 'lboehlin',
+  kaylachumley: 'rh-ee-kchumley',
+  edonehoo: 'rh-ee-edonehoo',
+  'bekah-stephens': 'bdiring@redhat.com',
+};
+
+const userMappings = {
+  ...platformTeamUsers,
+  ...enablementTeamUsers,
+  ...designTeamUsers,
 };
 // Map GitHub issue type to Jira issue type
 const issueTypeMappings = {
@@ -148,7 +185,6 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
     number,
     labels,
     assignees,
-    state,
     issueType,
   } = githubIssue;
 

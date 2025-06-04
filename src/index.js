@@ -36,6 +36,13 @@ async function syncIssues() {
         continue;
       }
 
+      // Skip if the issue is an Initiative
+      console.log(issue?.issueType?.name);
+      if (issue?.issueType?.name === 'Initiative') {
+        console.log(`Skipping Initiative #${issue.number}\n`);
+        continue;
+      }
+
       // Find the corresponding Jira issue
       const jiraIssue = await findJiraIssue(issue.url);
 
