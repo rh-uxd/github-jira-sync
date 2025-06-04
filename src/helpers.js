@@ -18,6 +18,7 @@ export const jiraClient = axios.create({
 });
 
 export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
+  await delay(1000);
   // Add remote link to GitHub issue
   await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/remotelink`, {
     globalId: `github-${githubIssue.id}`,
@@ -35,17 +36,18 @@ export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
 }
 
 export async function createNewJiraIssue(jiraIssueData, githubIssue) {
+  await delay(1000);
   const jiraKey = await jiraClient
     .post('/rest/api/2/issue', jiraIssueData)
     .then(
       async (response) =>
         await addRemoteLinkToJiraIssue(response.data.key, githubIssue)
     );
-  await delay(1000);
   return jiraKey;
 }
 
 export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
+  await delay(1000);
   await jiraClient.put(`/rest/api/2/issue/${jiraIssueKey}`, jiraIssueData);
 }
 
@@ -411,10 +413,10 @@ export const repoIssues = executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
 export async function syncCommentsToJira(jiraIssueKey, githubComments) {
   try {
     // Get existing comments from Jira
+    await delay(1000);
     const { data: jiraComments } = await jiraClient.get(
       `/rest/api/2/issue/${jiraIssueKey}/comment`
     );
-    await delay(1000);
 
     // Create a map of existing comments by their GitHub URL
     const existingComments = new Map(
@@ -444,11 +446,11 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
         `Comment URL: ${comment.url}\n`;
 
       // Add the comment to Jira
+      await delay(1000);
       await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/comment`, {
         body: commentBody,
       });
       addedCommentCount++;
-      await delay(1000);
       console.log(
         ` - Added comment from ${comment.author.login} to Jira issue ${jiraIssueKey}`
       );
@@ -456,10 +458,10 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
 
     // Remove any comments that no longer exist in GitHub
     for (const [_, comment] of existingComments) {
+      await delay(1000);
       await jiraClient.delete(
         `/rest/api/2/issue/${jiraIssueKey}/comment/${comment.id}`
       );
-      await delay(1000);
       console.log(
         ` - Removed outdated comment from Jira issue ${jiraIssueKey}`
       );

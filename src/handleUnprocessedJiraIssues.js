@@ -44,6 +44,11 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
           console.log(
             `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubNumber}`
           );
+        } else {
+          // GH issue found & open, likely duplicate Jira
+          console.log(
+            `  !! - Github issue #${githubNumber} found for unprocessed Jira ${jiraIssue.key}, check Jira for duplicate.`
+          );
         }
       } catch (error) {
         console.log(

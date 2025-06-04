@@ -4,6 +4,7 @@ import {
   getJiraComponent,
   createNewJiraIssue,
   syncCommentsToJira,
+  delay,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
 
@@ -81,6 +82,7 @@ export async function createChildIssues(
 export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
+    await delay(1000);
     const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
 
     // Sync comments for new issue
@@ -88,6 +90,7 @@ export async function createJiraIssue(githubIssue) {
       console.log(
         ` - Found ${githubIssue.comments.totalCount} total comments for new issue ${newJiraKey}...`
       );
+      await delay(1000);
       await syncCommentsToJira(newJiraKey, githubIssue.comments);
     }
 
