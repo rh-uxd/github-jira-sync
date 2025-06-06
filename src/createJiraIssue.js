@@ -4,7 +4,6 @@ import {
   getJiraComponent,
   createNewJiraIssue,
   syncCommentsToJira,
-  delay,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
 
@@ -20,6 +19,9 @@ export async function createChildIssues(
     const jiraComponent = getJiraComponent(repoName);
     const componentsArr = jiraComponent ? [jiraComponent] : null;
     const jiraIssueType = getJiraIssueType(subIssue.issueType).id;
+    const assignees = subIssue?.assignees?.nodes
+      ?.map((a) => a.login)
+      .join(', ');
 
     // Create child issue in Jira
     const childIssue = {
@@ -28,13 +30,11 @@ export async function createChildIssues(
           key: process.env.JIRA_PROJECT_KEY,
         },
         summary: subIssue.title,
-        description: `GH Issue ${subIssue.number}\nGH ID ${
-          subIssue?.id || ''
-        }\nUpstream URL: ${
-          subIssue.url
-        }\nRepo: ${repoOwner}/${repoName}\n\n----\n\n*Description:*\n${
-          subIssue?.body || ''
-        }`,
+        description: `${subIssue?.body || ''}\n\n----\n\nGH Issue ${
+          subIssue.number
+        }\nUpstream URL: ${subIssue.url}\nReporter: ${
+          subIssue?.author?.login
+        }\nAssignees: ${assignees}`,
         issuetype: {
           id: jiraIssueType,
         },
@@ -67,9 +67,6 @@ export async function createChildIssues(
 
     // Sync comments for the child issue
     if (subIssue.comments?.totalCount > 0) {
-      console.log(
-        ` - Found ${subIssue.comments.totalCount} total comments for child issue ${newJiraKey}...`
-      );
       await syncCommentsToJira(newJiraKey, subIssue.comments);
     }
 
@@ -82,15 +79,10 @@ export async function createChildIssues(
 export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
-    await delay(1000);
     const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
 
     // Sync comments for new issue
     if (githubIssue.comments.totalCount > 0) {
-      console.log(
-        ` - Found ${githubIssue.comments.totalCount} total comments for new issue ${newJiraKey}...`
-      );
-      await delay(1000);
       await syncCommentsToJira(newJiraKey, githubIssue.comments);
     }
 

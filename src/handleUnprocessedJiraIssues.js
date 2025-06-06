@@ -24,6 +24,7 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
       const githubNumber = parseInt(githubIdMatch);
       try {
         // Get issue details using GraphQL
+        await delay();
         const response = await executeGraphQLQuery(GET_ISSUE_DETAILS, {
           owner: process.env.GITHUB_OWNER,
           repo: process.env.GITHUB_REPO,
@@ -39,20 +40,20 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
           console.log(
             ` - GitHub issue #${githubNumber} is closed but Jira issue ${jiraIssue.key} is not, transitioning to Closed`
           );
+          await delay();
           await transitionJiraIssue(jiraIssue.key, 'Closed');
-          await delay(1000);
           console.log(
             `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubNumber}`
           );
         } else {
           // GH issue found & open, likely duplicate Jira
           console.log(
-            `  !! - Github issue #${githubNumber} found for unprocessed Jira ${jiraIssue.key}, check Jira for duplicate.`
+            `  !! - Github issue #${githubNumber} found for unprocessed Jira ${jiraIssue.key}, check Jira for duplicate issue or sync GH/Jira issue status.`
           );
         }
       } catch (error) {
         console.log(
-          `Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}`
+          `  !! - Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}`
         );
       }
     }

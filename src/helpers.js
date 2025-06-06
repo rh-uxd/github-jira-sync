@@ -18,7 +18,7 @@ export const jiraClient = axios.create({
 });
 
 export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
-  await delay(1000);
+  await delay();
   // Add remote link to GitHub issue
   await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/remotelink`, {
     globalId: `github-${githubIssue.id}`,
@@ -36,7 +36,7 @@ export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
 }
 
 export async function createNewJiraIssue(jiraIssueData, githubIssue) {
-  await delay(1000);
+  await delay();
   const jiraKey = await jiraClient
     .post('/rest/api/2/issue', jiraIssueData)
     .then(
@@ -47,11 +47,12 @@ export async function createNewJiraIssue(jiraIssueData, githubIssue) {
 }
 
 export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
-  await delay(1000);
+  await delay();
   await jiraClient.put(`/rest/api/2/issue/${jiraIssueKey}`, jiraIssueData);
 }
 
-export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const delay = (ms = 1000) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 const platformTeamUsers = {
   nicolethoen: 'nthoen',
@@ -181,11 +182,11 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
     title,
     url,
     body = '',
-    id,
     number,
     labels,
     assignees,
     issueType,
+    author,
   } = githubIssue;
 
   // Extract repository name from the repository object
@@ -206,9 +207,11 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   const jiraIssue = {
     fields: {
       summary: title,
-      description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
-        ', '
-      )}\n\n----\n\n*Description:*\n${body || ''}`,
+      description: `${
+        body || ''
+      }\n\n----\n\nGH Issue ${number}\nUpstream URL: ${url}\nReporter: ${
+        author?.login
+      }\nAssignees: ${assigneeLogins.join(', ')}`,
       labels: ['GitHub', ...jiraLabels],
       assignee: { name: jiraAssignee },
       issuetype: {
@@ -243,8 +246,7 @@ export async function executeGraphQLQuery(query, variables) {
     const response = await octokit.graphql(query, variables);
     return response;
   } catch (error) {
-    console.error('GraphQL query error:', error);
-    throw error;
+    console.error(`${error.name} - ${error.message}`);
   }
 }
 
@@ -253,8 +255,8 @@ export const GET_ALL_REPO_ISSUES = `
   query GetAllRepoIssues(
     $owner: String!
     $repo: String!
-    $numIssuesToFetch: Int = 30
-    $issuesCursor: String = null
+    $numIssuesToFetch: Int = 100
+    $issuesCursor: String
     $issueStates: [IssueState!] = [OPEN]
     $numLabelsPerIssue: Int = 10
     $numAssigneesPerIssue: Int = 10
@@ -291,6 +293,9 @@ export const GET_ALL_REPO_ISSUES = `
               login
             }
             totalCount
+          }
+          author {
+            login
           }
           comments(first: $numCommentsPerIssue, orderBy: {field: UPDATED_AT, direction: DESC}) {
             nodes {
@@ -384,6 +389,9 @@ export const GET_ISSUE_DETAILS = `
           }
           totalCount
         }
+        author {
+          login
+        }
         comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
           nodes {
             author {
@@ -441,15 +449,44 @@ export const GET_ISSUE_DETAILS = `
   }
 `;
 
-export const repoIssues = executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
-  owner: process.env.GITHUB_OWNER,
-  repo: process.env.GITHUB_REPO,
-});
+export async function getRepoIssues() {
+  let allIssues = [];
+  let hasNextPage = true;
+  let cursor = null;
+
+  while (hasNextPage) {
+    const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
+      owner: process.env.GITHUB_OWNER,
+      repo: process.env.GITHUB_REPO,
+      issuesCursor: cursor,
+    });
+
+    const { nodes, pageInfo } = response.repository.issues;
+    allIssues = [...allIssues, ...nodes];
+
+    hasNextPage = pageInfo.hasNextPage;
+    cursor = pageInfo.endCursor;
+
+    // Add a small delay between requests to avoid rate limiting
+    // if (hasNextPage) {
+    //   await delay(1000);
+    // }
+  }
+
+  return {
+    repository: {
+      issues: {
+        nodes: allIssues,
+        totalCount: allIssues.length,
+      },
+    },
+  };
+}
 
 export async function syncCommentsToJira(jiraIssueKey, githubComments) {
   try {
     // Get existing comments from Jira
-    await delay(1000);
+    await delay();
     const { data: jiraComments } = await jiraClient.get(
       `/rest/api/2/issue/${jiraIssueKey}/comment`
     );
@@ -482,11 +519,12 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
         `Comment URL: ${comment.url}\n`;
 
       // Add the comment to Jira
-      await delay(1000);
+      await delay();
       await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/comment`, {
         body: commentBody,
       });
       addedCommentCount++;
+      // Log only if any comments are added
       console.log(
         ` - Added comment from ${comment.author.login} to Jira issue ${jiraIssueKey}`
       );
@@ -494,7 +532,7 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
 
     // Remove any comments that no longer exist in GitHub
     for (const [_, comment] of existingComments) {
-      await delay(1000);
+      await delay();
       await jiraClient.delete(
         `/rest/api/2/issue/${jiraIssueKey}/comment/${comment.id}`
       );
@@ -503,7 +541,9 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
       );
     }
 
-    console.log(` - Completed syncing ${addedCommentCount} new comments.`);
+    if (addedCommentCount > 0) {
+      console.log(` - Completed syncing ${addedCommentCount} new comments.`);
+    }
   } catch (error) {
     console.error('Error syncing comments:', error.message, { error });
   }

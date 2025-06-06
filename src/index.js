@@ -1,28 +1,35 @@
 import 'dotenv/config';
-import { jiraClient, repoIssues, delay } from './helpers.js';
+import { jiraClient, getRepoIssues } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
 import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
 
+export let jiraIssues = [];
+
 async function syncIssues() {
   try {
     // Fetch all Jira issues for the specific repo/component
-    const { data: jiraIssues } = await jiraClient.get('/rest/api/2/search', {
+    const response = await jiraClient.get('/rest/api/2/search', {
       params: {
-        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${process.env.GITHUB_REPO}"`,
+        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${process.env.GITHUB_REPO}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
         maxResults: 1000,
         fields: 'key,id,description,status',
       },
     });
-    await delay(1000);
+
+    // Assign the issues to our exported variable
+    jiraIssues = response.data.issues;
 
     // Get GitHub issues from GraphQL response
-    const githubApiResponse = await repoIssues;
-    const githubIssues = githubApiResponse.repository.issues.nodes;
+    const githubApiResponse = await getRepoIssues();
+    // Sort by number to ensure consistent order, enables easier debugging
+    const githubIssues = githubApiResponse.repository.issues.nodes.sort(
+      (a, b) => a.number - b.number
+    );
 
     console.log(
-      `** Found ${jiraIssues.issues.length} Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} GitHub issues **\n`
+      `** Found ${jiraIssues.length} open Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} open GitHub issues **\n`
     );
 
     // Keep track of which Jira issues we've processed
@@ -61,7 +68,7 @@ async function syncIssues() {
 
     // Check remaining Jira issues that weren't processed
     // This is to handle cases where Jira issues are not linked to any open GitHub issue
-    const unprocessedJiraIssues = jiraIssues.issues.filter(
+    const unprocessedJiraIssues = jiraIssues.filter(
       (issue) => !processedJiraIssues.has(issue.key)
     );
 

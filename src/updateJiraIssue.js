@@ -51,9 +51,6 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
         if (currentChildIssue) {
           // Sync comments for the existing child issue
           if (subIssue.comments?.totalCount > 0) {
-            console.log(
-              ` - Found ${subIssue.comments.totalCount} total comments for child issue ${currentChildIssue.key}...`
-            );
             await syncCommentsToJira(currentChildIssue.key, subIssue.comments);
           }
 
@@ -102,9 +99,6 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
 
             // Sync comments for the existing issue being converted to a child
             if (subIssue.comments?.totalCount > 0) {
-              console.log(
-                ` - Found ${subIssue.comments.totalCount} total comments for child issue ${jiraIssue.key}...`
-              );
               await syncCommentsToJira(jiraIssue.key, subIssue.comments);
             }
 
@@ -137,9 +131,6 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
 
     // Sync comments
     if (githubIssue.comments.totalCount > 0) {
-      console.log(
-        ` - Found ${githubIssue.comments.totalCount} total comments for issue ${jiraIssue.key}...`
-      );
       await syncCommentsToJira(jiraIssue.key, githubIssue.comments);
     }
 
@@ -148,8 +139,8 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       console.log(
         ` - GitHub issue #${githubIssue.number} is open but Jira issue ${jiraIssue.key} is closed, transitioning to New`
       );
+      await delay();
       await transitionJiraIssue(jiraIssue.key, 'New');
-      await delay(1000);
     }
 
     // Update child issues
