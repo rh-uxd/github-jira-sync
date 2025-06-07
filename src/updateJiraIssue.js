@@ -85,6 +85,8 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
             if (isEpic) {
               // If child of epic, set customfield 12311140 used for required epic link
               updatedData.fields['customfield_12311140'] = parentJiraKey;
+              // Remove parent field if it exists
+              delete updatedData.fields.parent;
             } else {
               // If not child of epic, set parent field
               updatedData.fields.parent = {
@@ -92,10 +94,10 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               };
               // and set issue type to sub-task
               // TODO: this is throwing an error when trying to update the issuetype
-              updatedData.fields.issuetype = {
-                name: 'Sub-task',
-                id: 5,
-              };
+              // updatedData.fields.issuetype = {
+              //   name: 'Sub-task',
+              //   id: 5,
+              // };
             }
             await editJiraIssue(jiraIssue.key, updatedData);
 

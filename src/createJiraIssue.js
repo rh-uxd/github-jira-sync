@@ -17,7 +17,6 @@ export async function createChildIssues(
     // Extract repo name from the repository object
     const [repoOwner, repoName] = subIssue.repository.nameWithOwner.split('/');
     const jiraComponent = getJiraComponent(repoName);
-    const componentsArr = jiraComponent ? [jiraComponent] : null;
     const jiraIssueType = getJiraIssueType(subIssue.issueType);
     const assignees = subIssue?.assignees?.nodes
       ?.map((a) => a.login)
@@ -35,27 +34,33 @@ export async function createChildIssues(
         }\nUpstream URL: ${subIssue.url}\nReporter: ${
           subIssue?.author?.login || ''
         }\nAssignees: ${assignees}`,
-        issuetype: {
-          id: jiraIssueType.id,
-        },
-        parent: {
-          key: parentJiraKey,
-        },
       },
     };
 
-    if (componentsArr) {
+    if (jiraComponent) {
       // Only pass component if it exists
-      childIssue.fields.components = componentsArr;
+      childIssue.fields.components = [{ name: jiraComponent }];
     }
 
     if (isEpic) {
-      // Epic Link custom field is required for epic child issues
+      // Parent epic cannot contain child epic
+      if (jiraIssueType.id === 16) {
+        console.error(' - !! - Epic child issue cannot be an Epic');
+        return;
+      }
+
+      // For epic children, keep original issue type and use epic link field
+      childIssue.fields.issuetype = {
+        id: jiraIssueType.id,
+      };
       childIssue.fields['customfield_12311140'] = parentJiraKey;
     } else {
-      // If parent is not an epic, child can only be a sub-task
+      // For non-epic children, must be sub-tasks
       childIssue.fields.issuetype = {
         id: 5,
+      };
+      childIssue.fields.parent = {
+        key: parentJiraKey,
       };
     }
 
