@@ -562,9 +562,11 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
         .filter(Boolean)
     );
 
-    // Process each GitHub comment
+    // Reverse comments to add oldest first to match Jira comment order (oldest at bottom, newest at top)
+    const githubCommentsAscending = githubComments.nodes.reverse();
     let addedCommentCount = 0;
-    for (const comment of githubComments.nodes) {
+    // Process each GitHub comment
+    for (const comment of githubCommentsAscending) {
       // Skip if comment already exists in Jira
       if (existingComments.has(comment.url)) {
         existingComments.delete(comment.url);
