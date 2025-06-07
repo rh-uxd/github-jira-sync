@@ -5,7 +5,7 @@ const isUpstreamUrlMatch = (jiraDescription, ghIssueLink) => {
   const ghIssueNumber = ghIssueLink.split('/').pop();
   // Regex pattern to match the exact issue number with no trailing numbers
   // Prevents substring matching - ex: 39 matching 391
-  const regexPattern = `Upstream URL: https:\/\/github\.com\/patternfly\/patternfly-quickstarts\/issues\/${ghIssueNumber}(?![0-9])(?:$|\r?\n)`;
+  const regexPattern = `Upstream URL: https:\/\/github\.com\/patternfly\/${process.env.GITHUB_REPO}\/issues\/${ghIssueNumber}(?![0-9])(?:$|\r?\n)`;
   // Create a RegExp object from the dynamically constructed string
   const regex = new RegExp(regexPattern);
 

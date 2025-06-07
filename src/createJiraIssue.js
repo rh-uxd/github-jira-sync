@@ -18,7 +18,7 @@ export async function createChildIssues(
     const [repoOwner, repoName] = subIssue.repository.nameWithOwner.split('/');
     const jiraComponent = getJiraComponent(repoName);
     const componentsArr = jiraComponent ? [jiraComponent] : null;
-    const jiraIssueType = getJiraIssueType(subIssue.issueType).id;
+    const jiraIssueType = getJiraIssueType(subIssue.issueType);
     const assignees = subIssue?.assignees?.nodes
       ?.map((a) => a.login)
       .join(', ');
@@ -33,10 +33,10 @@ export async function createChildIssues(
         description: `${subIssue?.body || ''}\n\n----\n\nGH Issue ${
           subIssue.number
         }\nUpstream URL: ${subIssue.url}\nReporter: ${
-          subIssue?.author?.login
+          subIssue?.author?.login || ''
         }\nAssignees: ${assignees}`,
         issuetype: {
-          id: jiraIssueType,
+          id: jiraIssueType.id,
         },
         parent: {
           key: parentJiraKey,
@@ -72,7 +72,7 @@ export async function createChildIssues(
 
     return newJiraKey;
   } catch (error) {
-    console.error('Error creating child issues:', error.message, { error });
+    console.error('Error creating child issues:', error.message);
   }
 }
 

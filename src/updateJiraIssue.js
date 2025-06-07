@@ -71,7 +71,9 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               isEpic
             );
             console.log(
-              ` - ChildIssue: Completed creating new Jira ${newJiraKey} as child of ${parentJiraKey} (GH #${subIssue.number})`
+              newJiraKey
+                ? ` - ChildIssue: Completed creating new Jira ${newJiraKey} as child of ${parentJiraKey} (GH #${subIssue.number})`
+                : ` !! - ChildIssue: Error creating new Jira issue as child of as child of ${parentJiraKey} (GH #${subIssue.number})`
             );
           } else {
             // Update existing Jira issue to link it as a child of the parent Jira issue
@@ -90,10 +92,10 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               };
               // and set issue type to sub-task
               // TODO: this is throwing an error when trying to update the issuetype
-              // updatedData.fields.issuetype = {
-              //   name: 'Sub-task',
-              //   id: 5,
-              // };
+              updatedData.fields.issuetype = {
+                name: 'Sub-task',
+                id: 5,
+              };
             }
             await editJiraIssue(jiraIssue.key, updatedData);
 

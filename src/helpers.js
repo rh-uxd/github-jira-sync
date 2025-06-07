@@ -129,8 +129,8 @@ const issueTypeMappings = {
     id: 3,
   },
   Initiative: {
-    jiraName: 'Epic',
-    id: 16,
+    jiraName: 'Feature',
+    id: 10700,
   },
   SubTask: {
     jiraName: 'Sub-task',
@@ -210,7 +210,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
       description: `${
         body || ''
       }\n\n----\n\nGH Issue ${number}\nUpstream URL: ${url}\nReporter: ${
-        author?.login
+        author?.login || ''
       }\nAssignees: ${assigneeLogins.join(', ')}`,
       labels: ['GitHub', ...jiraLabels],
       assignee: { name: jiraAssignee },
@@ -226,9 +226,9 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   };
 
   // Epic name field is required if issue type is Epic
-  if (jiraIssueType.jiraName === 'Epic') {
-    jiraIssue.fields['customfield_12311141'] = title;
-  }
+  // if (jiraIssueType.jiraName === 'Epic') {
+  //   jiraIssue.fields['customfield_12311141'] = title;
+  // }
 
   // Add extra fields for new issues
   if (!isUpdateIssue) {
@@ -450,27 +450,88 @@ export const GET_ISSUE_DETAILS = `
 `;
 
 export async function getRepoIssues() {
+  // Validate environment variables
+  if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
+    throw new Error(
+      'Missing required environment variables: GITHUB_OWNER and/or GITHUB_REPO'
+    );
+  }
+
   let allIssues = [];
   let hasNextPage = true;
+  // cursor is graphql response pointing to last returned issue, used for pagination
   let cursor = null;
+  let retryCount = 0;
+  const MAX_RETRIES = 3;
 
   while (hasNextPage) {
-    const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
-      owner: process.env.GITHUB_OWNER,
-      repo: process.env.GITHUB_REPO,
-      issuesCursor: cursor,
-    });
+    try {
+      const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
+        owner: process.env.GITHUB_OWNER,
+        repo: process.env.GITHUB_REPO,
+        issuesCursor: cursor,
+      });
 
-    const { nodes, pageInfo } = response.repository.issues;
-    allIssues = [...allIssues, ...nodes];
+      // Validate response structure
+      if (!response?.repository?.issues) {
+        throw new Error('Invalid response structure from GitHub API');
+      }
 
-    hasNextPage = pageInfo.hasNextPage;
-    cursor = pageInfo.endCursor;
+      const { nodes, pageInfo } = response.repository.issues;
 
-    // Add a small delay between requests to avoid rate limiting
-    // if (hasNextPage) {
-    //   await delay(1000);
-    // }
+      // Handle empty repository or no issues
+      if (!nodes || nodes.length === 0) {
+        console.log(
+          `No issues found in repository ${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}`
+        );
+        break;
+      }
+
+      allIssues = [...allIssues, ...nodes];
+
+      hasNextPage = pageInfo.hasNextPage;
+      cursor = pageInfo.endCursor;
+
+      // Add a delay between requests to avoid rate limiting
+      if (hasNextPage) {
+        await delay(1000);
+      }
+
+      // Reset retry count on successful request
+      retryCount = 0;
+    } catch (error) {
+      console.error('Error fetching GitHub issues:', error.message);
+
+      // Handle rate limiting
+      if (
+        error.message.includes('rate limit') ||
+        error.message.includes('429')
+      ) {
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.log(`Rate limited. Retrying in ${retryCount * 2} seconds...`);
+          await delay(retryCount * 2000); // Exponential backoff
+          continue;
+        } else {
+          throw new Error('Max retries exceeded for rate limiting');
+        }
+      }
+
+      // Handle other errors
+      throw new Error(`Failed to fetch GitHub issues: ${error.message}`);
+    }
+  }
+
+  // Return empty structure if no issues found
+  if (allIssues.length === 0) {
+    return {
+      repository: {
+        issues: {
+          nodes: [],
+          totalCount: 0,
+        },
+      },
+    };
   }
 
   return {
