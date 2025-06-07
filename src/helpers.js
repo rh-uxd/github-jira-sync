@@ -98,47 +98,47 @@ const userMappings = {
 const issueTypeMappings = {
   Bug: {
     jiraName: 'Bug',
-    id: 1,
+    id: '1',
   },
   Epic: {
     jiraName: 'Epic',
-    id: 16,
+    id: '16',
   },
   Task: {
     jiraName: 'Task',
-    id: 3,
+    id: '3',
   },
   Feature: {
     jiraName: 'Story',
-    id: 17,
+    id: '17',
   },
   DevX: {
     jiraName: 'Task',
-    id: 3,
+    id: '3',
   },
   Documentation: {
     jiraName: 'Story',
-    id: 17,
+    id: '17',
   },
   Demo: {
     jiraName: 'Story',
-    id: 17,
+    id: '17',
   },
   'Tech debt': {
     jiraName: 'Task',
-    id: 3,
+    id: '3',
   },
   Initiative: {
     jiraName: 'Feature',
-    id: 10700,
+    id: '10700',
   },
   SubTask: {
     jiraName: 'Sub-task',
-    id: 5,
+    id: '5',
   },
   default: {
     jiraName: 'Story',
-    id: 17,
+    id: '17',
   },
 };
 

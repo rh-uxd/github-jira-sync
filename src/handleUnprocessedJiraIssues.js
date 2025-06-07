@@ -53,7 +53,8 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
         }
       } catch (error) {
         console.log(
-          `  !! - Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}`
+          `  !! - Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}.
+            !! - Did the original Github issue transfer to a different repo?`
         );
       }
     }

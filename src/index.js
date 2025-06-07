@@ -14,7 +14,7 @@ async function syncIssues() {
       params: {
         jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${process.env.GITHUB_REPO}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
         maxResults: 1000,
-        fields: 'key,id,description,status',
+        fields: 'key,id,description,status, issuetype',
       },
     });
 

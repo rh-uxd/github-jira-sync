@@ -21,7 +21,6 @@ export async function createChildIssues(
     const assignees = subIssue?.assignees?.nodes
       ?.map((a) => a.login)
       .join(', ');
-
     // Create child issue in Jira
     const childIssue = {
       fields: {
@@ -36,6 +35,14 @@ export async function createChildIssues(
         }\nAssignees: ${assignees}`,
       },
     };
+
+    // If GH issue is closed, set created Jira child issue status to closed
+    if (subIssue.state === 'Closed') {
+      childIssue.fields.status = {
+        name: 'Closed',
+        id: '6',
+      };
+    }
 
     if (jiraComponent) {
       // Only pass component if it exists
@@ -57,7 +64,7 @@ export async function createChildIssues(
     } else {
       // For non-epic children, must be sub-tasks
       childIssue.fields.issuetype = {
-        id: 5,
+        id: '5',
       };
       childIssue.fields.parent = {
         key: parentJiraKey,
@@ -93,7 +100,7 @@ export async function createJiraIssue(githubIssue) {
 
     // Create child issues for any sub-issues
     if (githubIssue.subIssues.totalCount > 0) {
-      const isEpic = jiraIssue.fields.issuetype.id === 16;
+      const isEpic = jiraIssue.fields.issuetype.id === '16';
       await updateChildIssues(newJiraKey, githubIssue, isEpic);
     }
 

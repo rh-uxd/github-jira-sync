@@ -12,6 +12,7 @@ import { findJiraIssue } from './findJiraIssue.js';
 
 async function findChildIssues(jiraIssueKey) {
   try {
+    delay();
     const response = await jiraClient.get('/rest/api/2/search', {
       params: {
         jql: `parent = ${jiraIssueKey}`,
@@ -83,7 +84,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
             // Conditionally update issue based on if it's a child of an epic
             const updatedData = { fields: {} };
             if (isEpic) {
-              // If child of epic, set customfield 12311140 used for required epic link
+              // If parent is epic, set child's customfield 12311140 required for epic link
               updatedData.fields['customfield_12311140'] = parentJiraKey;
               // Remove parent field if it exists
               delete updatedData.fields.parent;
@@ -94,10 +95,10 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               };
               // and set issue type to sub-task
               // TODO: this is throwing an error when trying to update the issuetype
-              // updatedData.fields.issuetype = {
-              //   name: 'Sub-task',
-              //   id: 5,
-              // };
+              updatedData.fields.issuetype = {
+                name: 'Sub-task',
+                id: '5',
+              };
             }
             await editJiraIssue(jiraIssue.key, updatedData);
 
@@ -129,6 +130,13 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
 export async function updateJiraIssue(jiraIssue, githubIssue) {
   try {
     const jiraIssueData = buildJiraIssueData(githubIssue, true);
+    // If issue is a sub-task, keep issue type as sub-task
+    // Avoids next GH sync resetting sub-task issuetype
+    if (jiraIssue.fields.issuetype.id === '5') {
+      jiraIssueData.fields.issuetype = {
+        id: '5',
+      };
+    }
     await editJiraIssue(jiraIssue.key, jiraIssueData);
 
     addRemoteLinkToJiraIssue(jiraIssue.key, githubIssue);
@@ -148,7 +156,7 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
     }
 
     // Update child issues
-    const isEpic = jiraIssueData.fields.issuetype.id === 16;
+    const isEpic = jiraIssueData.fields.issuetype.id === '16';
     await updateChildIssues(jiraIssue.key, githubIssue, isEpic);
 
     console.log(
