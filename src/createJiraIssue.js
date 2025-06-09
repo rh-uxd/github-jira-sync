@@ -1,104 +1,121 @@
 import {
   buildJiraIssueData,
-  jiraClient,
+  getJiraIssueType,
   getJiraComponent,
-  delay,
+  createNewJiraIssue,
+  syncCommentsToJira,
 } from './helpers.js';
-import { updateSubTasks } from './updateJiraIssue.js';
+import { updateChildIssues } from './updateJiraIssue.js';
+import { transitionJiraIssue } from './transitionJiraIssue.js';
+import { errorCollector } from './index.js';
 
-export async function createSubTasks(parentJiraKey, subIssue) {
+export async function createChildIssues(
+  parentJiraKey,
+  subIssue,
+  isEpic = false
+) {
   try {
-    // Each sub-issue is a Jira sub-task
+    // Each sub-issue is a Jira child issue
     // Extract repo name from the repository object
     const [repoOwner, repoName] = subIssue.repository.nameWithOwner.split('/');
     const jiraComponent = getJiraComponent(repoName);
-    const componentsArr = jiraComponent ? [jiraComponent] : null;
-
-    // Create sub-task in Jira
-    const subtask = {
+    const jiraIssueType = getJiraIssueType(subIssue.issueType);
+    const assignees = subIssue?.assignees?.nodes
+      ?.map((a) => a.login)
+      .join(', ');
+    const childIssue = {
       fields: {
         project: {
           key: process.env.JIRA_PROJECT_KEY,
         },
         summary: subIssue.title,
-        description: `GH Issue ${subIssue.number}\nGH ID ${
-          subIssue?.id || ''
-        }\nUpstream URL: ${
-          subIssue.url
-        }\nRepo: ${repoOwner}/${repoName}\n\n----\n\n*Description:*\n${
-          subIssue?.body || ''
-        }`,
-        issuetype: {
-          name: 'Sub-task',
-        },
-        parent: {
-          key: parentJiraKey,
-        },
+        description: `${subIssue?.body || ''}\n\n----\n\nGH Issue ${
+          subIssue.number
+        }\nUpstream URL: ${subIssue.url}\nReporter: ${
+          subIssue?.author?.login || ''
+        }\nAssignees: ${assignees}`,
       },
     };
 
-    if (componentsArr) {
+    if (jiraComponent) {
       // Only pass component if it exists
-      subtask.fields.components = componentsArr;
+      childIssue.fields.components = [{ name: jiraComponent }];
     }
 
-    const response = await jiraClient.post('/rest/api/2/issue', subtask);
-    await delay(1000);
+    if (isEpic) {
+      // Parent epic cannot contain child epic
+      if (jiraIssueType.id === 16) {
+        console.error(' - !! - Epic child issue cannot be an Epic');
+        return;
+      }
+
+      // For epic children, keep original issue type and use epic link field
+      childIssue.fields.issuetype = {
+        id: jiraIssueType.id,
+      };
+      childIssue.fields['customfield_12311140'] = parentJiraKey;
+    } else {
+      // For non-epic children, must be sub-tasks
+      childIssue.fields.issuetype = {
+        id: '5',
+      };
+      childIssue.fields.parent = {
+        key: parentJiraKey,
+      };
+    }
+
+    // Create new Jira issue & add remote link to GitHub issue
+    const newJiraKey = await createNewJiraIssue(childIssue, subIssue);
+    // If GH issue is closed, transition Jira issue to closed (cannot create a closed issue)
+    if (subIssue.state === 'CLOSED') {
+      await transitionJiraIssue(newJiraKey, 'Closed');
+    }
     console.log(
-      `Created sub-task ${response.data.key} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
+      ` - Created child issue ${newJiraKey} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
     );
-    // Add remote link to GitHub issue
-    await jiraClient.post(`/rest/api/2/issue/${response.data.key}/remotelink`, {
-      globalId: `github-${subIssue.id}`,
-      application: {
-        type: 'com.github',
-        name: 'GitHub',
-      },
-      relationship: 'clones',
-      object: {
-        url: subIssue.url,
-        title: subIssue.url,
-      },
-    });
+
+    // Sync comments for the child issue
+    if (subIssue.comments?.totalCount > 0) {
+      await syncCommentsToJira(newJiraKey, subIssue.comments);
+    }
+
+    return newJiraKey;
   } catch (error) {
-    console.error('Error creating sub-tasks:', error.message, { error });
+    errorCollector.addError(
+      `Error creating child issues for parent ${parentJiraKey}`,
+      error
+    );
   }
 }
 
 export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
-    const response = await jiraClient.post('/rest/api/2/issue', jiraIssue);
-    await delay(1000);
-    console.log(
-      `Created Jira issue ${response.data.key} for GitHub issue #${githubIssue.number}`
-    );
+    const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
 
-    // Add remote link to GitHub issue
-    await jiraClient.post(`/rest/api/2/issue/${response.data.key}/remotelink`, {
-      globalId: `github-${githubIssue.id}`,
-      application: {
-        type: 'com.github',
-        name: 'GitHub',
-      },
-      relationship: 'clones',
-      object: {
-        url: githubIssue.html_url,
-        title: githubIssue.html_url,
-      },
-    });
-    await delay(1000);
-    if (githubIssue.subIssues.totalCount > 0) {
-      // Create sub-tasks for any sub-issues
-      await updateSubTasks(response.data.key, githubIssue);
+    // If GH issue is closed, transition Jira issue to closed
+    if (githubIssue.state === 'CLOSED') {
+      await transitionJiraIssue(newJiraKey, 'Closed');
     }
 
-    return response.data;
+    // Sync comments for new issue
+    if (githubIssue.comments.totalCount > 0) {
+      await syncCommentsToJira(newJiraKey, githubIssue.comments);
+    }
+
+    // Create child issues for any sub-issues
+    if (githubIssue.subIssues.totalCount > 0) {
+      const isEpic = jiraIssue.fields.issuetype.id === '16';
+      await updateChildIssues(newJiraKey, githubIssue, isEpic);
+    }
+
+    console.log(
+      `Created Jira issue ${newJiraKey} for GitHub issue #${githubIssue.number}\n`
+    );
   } catch (error) {
-    console.error(
-      'Error creating Jira issue:',
-      error.message,
-      error.response.data
+    errorCollector.addError(
+      `Error creating Jira issue for GitHub issue #${githubIssue.number}`,
+      error
     );
   }
 }

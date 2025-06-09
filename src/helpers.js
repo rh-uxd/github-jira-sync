@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
+import { errorCollector } from './index.js';
 
 // Initialize Octokit with GraphQL support
 export const octokit = new Octokit({
@@ -17,24 +18,133 @@ export const jiraClient = axios.create({
   },
 });
 
-export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
+  await delay();
+  // Add remote link to GitHub issue
+  await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/remotelink`, {
+    globalId: `github-${githubIssue.id}`,
+    application: {
+      type: 'com.github',
+      name: 'GitHub',
+    },
+    relationship: 'clones',
+    object: {
+      url: githubIssue.url,
+      title: githubIssue.title,
+    },
+  });
+  return jiraIssueKey;
+}
+
+export async function createNewJiraIssue(jiraIssueData, githubIssue) {
+  await delay();
+  const jiraKey = await jiraClient
+    .post('/rest/api/2/issue', jiraIssueData)
+    .then(
+      async (response) =>
+        await addRemoteLinkToJiraIssue(response.data.key, githubIssue)
+    );
+  return jiraKey;
+}
+
+export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
+  await delay();
+  await jiraClient.put(`/rest/api/2/issue/${jiraIssueKey}`, jiraIssueData);
+}
+
+export const delay = (ms = 1000) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+const platformTeamUsers = {
+  nicolethoen: 'nthoen',
+  dlabaj: 'dlabaj',
+  rebeccaalpert: 'ralpert@redhat.com',
+  mcoker: 'michaelcoker',
+  'wise-king-sullyman': 'ausulliv@redhat.com',
+  sg00dwin: 'sgoodwin_redhat',
+  thatblindgeye: 'eolkowsk@redhat.com',
+  kmcfaul: 'knmcfaul',
+  srambach: 'srambach',
+  parthivrh: 'parthivk',
+};
+
+const enablementTeamUsers = {
+  mattnolting: 'rhn-support-mnolting',
+  jpuzz0: 'jpuzzo@redhat.com',
+  'jeff-phillips-18': 'jephilli@redhat.com',
+  jschuler: 'jschuler_kafka_devexp',
+  evwilkin: 'ewilkins@redhat.com',
+  cdcabrera: 'cdcabrera',
+  dlabrecq: 'dlabrecq@redhat.com',
+  'jenny-s51': 'eug3nia',
+  mfrances17: 'mfrances',
+  gitdallas: 'dnicol@redhat.com',
+  tlabaj: 'tlabaj@redhat.com',
+};
+
+const designTeamUsers = {
+  'andrew-ronaldson': 'aronaldson',
+  lboehling: 'lboehlin',
+  kaylachumley: 'rh-ee-kchumley',
+  edonehoo: 'rh-ee-edonehoo',
+  'bekah-stephens': 'bdiring@redhat.com',
+};
 
 const userMappings = {
-  evwilkin: 'ewilkins@redhat.com',
+  ...platformTeamUsers,
+  ...enablementTeamUsers,
+  ...designTeamUsers,
 };
 // Map GitHub issue type to Jira issue type
 const issueTypeMappings = {
-  Bug: 'Bug',
-  Epic: 'Epic',
-  Task: 'Task',
-  Feature: 'Story',
-  DevX: 'Task',
-  Documentation: 'Story',
-  Demo: 'Story',
-  Support: 'Story',
-  'Tech debt': 'Task',
-  Initiative: 'Feature',
+  Bug: {
+    jiraName: 'Bug',
+    id: '1',
+  },
+  Epic: {
+    jiraName: 'Epic',
+    id: '16',
+  },
+  Task: {
+    jiraName: 'Task',
+    id: '3',
+  },
+  Feature: {
+    jiraName: 'Story',
+    id: '17',
+  },
+  DevX: {
+    jiraName: 'Task',
+    id: '3',
+  },
+  Documentation: {
+    jiraName: 'Story',
+    id: '17',
+  },
+  Demo: {
+    jiraName: 'Story',
+    id: '17',
+  },
+  'Tech debt': {
+    jiraName: 'Task',
+    id: '3',
+  },
+  Initiative: {
+    jiraName: 'Feature',
+    id: '10700',
+  },
+  SubTask: {
+    jiraName: 'Sub-task',
+    id: '5',
+  },
+  default: {
+    jiraName: 'Story',
+    id: '17',
+  },
 };
+
+export const getJiraIssueType = (ghIssueType) =>
+  issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 const availableComponents = [
   'AI-infra-ui-components',
@@ -46,6 +156,7 @@ const availableComponents = [
   'patternfly-a11y',
   'patternfly-design',
   'patternfly-design-kit',
+  'patternfly-doc-core',
   'patternfly-extension-seed',
   'patternfly-infra-issues',
   'patternfly-org',
@@ -73,12 +184,11 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
     title,
     url,
     body = '',
-    id,
     number,
     labels,
     assignees,
-    state,
     issueType,
+    author,
   } = githubIssue;
 
   // Extract repository name from the repository object
@@ -92,48 +202,41 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   // Map assignees from GraphQL structure
   const assigneeLogins = assignees.nodes.map((a) => a.login);
   const jiraAssignee = userMappings[assigneeLogins[0]] || '';
-  const jiraIssueType = issueTypeMappings[issueType?.name] || 'Story';
+  const jiraIssueType = getJiraIssueType(issueType);
 
   // build the Jira issue object to create/update Jira with
   // Updating an issue allows fewer fields than creating new issue
-  const jiraIssue = isUpdateIssue
-    ? {
-        fields: {
-          summary: title,
-          description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
-            ', '
-          )}\n\n----\n\n*Description:*\n${body || ''}`,
-          labels: ['GitHub', ...jiraLabels],
-          assignee: { name: jiraAssignee },
-          components: [
-            {
-              name: jiraComponent,
-            },
-          ],
+  const jiraIssue = {
+    fields: {
+      summary: title,
+      description: `${
+        body || ''
+      }\n\n----\n\nGH Issue ${number}\nUpstream URL: ${url}\nReporter: ${
+        author?.login || ''
+      }\nAssignees: ${assigneeLogins.join(', ')}`,
+      labels: ['GitHub', ...jiraLabels],
+      assignee: { name: jiraAssignee },
+      issuetype: {
+        id: jiraIssueType.id,
+      },
+      components: [
+        {
+          name: jiraComponent,
         },
-      }
-    : {
-        fields: {
-          project: {
-            key: process.env.JIRA_PROJECT_KEY,
-          },
-          summary: title,
-          description: `GH Issue ${number}\nGH ID ${id}\nUpstream URL: ${url}\nAssignees: ${assigneeLogins.join(
-            ', '
-          )}\n\n----\n\n*Description:*\n${body || ''}`,
-          issuetype: {
-            name: jiraIssueType,
-          },
-          labels: ['GitHub', ...jiraLabels],
-          assignee: { name: jiraAssignee },
-          components: [
-            {
-              name: jiraComponent,
-            },
-          ],
-          [jiraIssueType === 'Epic' ? 'customfield_12311141' : '']: title, // Epic name field is required
-        },
-      };
+      ],
+    },
+  };
+
+  // Add required extra fields for new issue creation
+  if (!isUpdateIssue) {
+    jiraIssue.fields.project = {
+      key: process.env.JIRA_PROJECT_KEY,
+    };
+    // Epic name field is required on Epic creation
+    if (jiraIssueType.jiraName === 'Epic') {
+      jiraIssue.fields['customfield_12311141'] = title;
+    }
+  }
 
   return jiraIssue;
 };
@@ -144,8 +247,8 @@ export async function executeGraphQLQuery(query, variables) {
     const response = await octokit.graphql(query, variables);
     return response;
   } catch (error) {
-    console.error('GraphQL query error:', error);
-    throw error;
+    errorCollector.addError('GraphQL query execution', error);
+    return null;
   }
 }
 
@@ -154,8 +257,8 @@ export const GET_ALL_REPO_ISSUES = `
   query GetAllRepoIssues(
     $owner: String!
     $repo: String!
-    $numIssuesToFetch: Int = 30
-    $issuesCursor: String = null
+    $numIssuesToFetch: Int = 100
+    $issuesCursor: String
     $issueStates: [IssueState!] = [OPEN]
     $numLabelsPerIssue: Int = 10
     $numAssigneesPerIssue: Int = 10
@@ -193,6 +296,9 @@ export const GET_ALL_REPO_ISSUES = `
             }
             totalCount
           }
+          author {
+            login
+          }
           comments(first: $numCommentsPerIssue, orderBy: {field: UPDATED_AT, direction: DESC}) {
             nodes {
               author {
@@ -205,12 +311,18 @@ export const GET_ALL_REPO_ISSUES = `
             }
             totalCount
           }
+          parent {
+            url
+          }
           subIssues(first: $numSubIssuesPerIssue) {
             nodes {
               title
               url
               state
               number
+              issueType {
+                name
+              }
               repository {
                 nameWithOwner
               }
@@ -223,6 +335,18 @@ export const GET_ALL_REPO_ISSUES = `
                 nodes {
                   name
                 }
+              }
+              comments(first: $numCommentsPerIssue, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                nodes {
+                  author {
+                    login
+                  }
+                  body
+                  createdAt
+                  updatedAt
+                  url
+                }
+                totalCount
               }
             }
             totalCount
@@ -267,6 +391,9 @@ export const GET_ISSUE_DETAILS = `
           }
           totalCount
         }
+        author {
+          login
+        }
         comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
           nodes {
             author {
@@ -275,8 +402,12 @@ export const GET_ISSUE_DETAILS = `
             bodyText
             createdAt
             updatedAt
+            url
           }
           totalCount
+        }
+        parent {
+          url
         }
         subIssues(first: 50) {
           nodes {
@@ -284,6 +415,9 @@ export const GET_ISSUE_DETAILS = `
             title
             url
             number
+            issueType {
+              name
+            }
             repository {
               nameWithOwner
             }
@@ -297,6 +431,18 @@ export const GET_ISSUE_DETAILS = `
                 name
               }
             }
+            comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+              nodes {
+                author {
+                  login
+                }
+                bodyText
+                createdAt
+                updatedAt
+                url
+              }
+              totalCount
+            }
           }
           totalCount
         }
@@ -305,7 +451,184 @@ export const GET_ISSUE_DETAILS = `
   }
 `;
 
-export const repoIssues = executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
-  owner: process.env.GITHUB_OWNER,
-  repo: process.env.GITHUB_REPO,
-});
+export async function getRepoIssues() {
+  // Validate environment variables
+  if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
+    throw new Error(
+      'Missing required environment variables: GITHUB_OWNER and/or GITHUB_REPO'
+    );
+  }
+
+  let allIssues = [];
+  let hasNextPage = true;
+  // cursor is graphql response pointing to last returned issue, used for pagination
+  let cursor = null;
+  let retryCount = 0;
+  const MAX_RETRIES = 3;
+
+  while (hasNextPage) {
+    try {
+      const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
+        owner: process.env.GITHUB_OWNER,
+        repo: process.env.GITHUB_REPO,
+        issuesCursor: cursor,
+      });
+
+      // Validate response structure
+      if (!response?.repository?.issues) {
+        throw new Error('Invalid response structure from GitHub API');
+      }
+
+      const { nodes, pageInfo } = response.repository.issues;
+
+      // Handle empty repository or no issues
+      if (!nodes || nodes.length === 0) {
+        console.log(
+          `No issues found in repository ${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}`
+        );
+        break;
+      }
+
+      allIssues = [...allIssues, ...nodes];
+
+      hasNextPage = pageInfo.hasNextPage;
+      cursor = pageInfo.endCursor;
+
+      // Add a delay between requests to avoid rate limiting
+      if (hasNextPage) {
+        await delay(1000);
+      }
+
+      // Reset retry count on successful request
+      retryCount = 0;
+    } catch (error) {
+      errorCollector.addError(
+        `Error fetching GitHub issues (repo: ${process.env.GITHUB_REPO})`,
+        error
+      );
+
+      // Handle rate limiting
+      if (
+        error.message.includes('rate limit') ||
+        error.message.includes('429')
+      ) {
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.log(`Rate limited. Retrying in ${retryCount * 2} seconds...`);
+          await delay(retryCount * 2000); // Exponential backoff
+          continue;
+        } else {
+          throw new Error('Max retries exceeded for rate limiting');
+        }
+      }
+
+      // Handle other errors
+      throw new Error(`Failed to fetch GitHub issues: ${error.message}`);
+    }
+  }
+
+  // Return empty structure if no issues found
+  if (allIssues.length === 0) {
+    return {
+      repository: {
+        issues: {
+          nodes: [],
+          totalCount: 0,
+        },
+      },
+    };
+  }
+
+  return {
+    repository: {
+      issues: {
+        nodes: allIssues,
+        totalCount: allIssues.length,
+      },
+    },
+  };
+}
+
+export async function syncCommentsToJira(jiraIssueKey, githubComments) {
+  try {
+    // Get existing comments from Jira
+    await delay();
+    const { data: jiraComments } = await jiraClient.get(
+      `/rest/api/2/issue/${jiraIssueKey}/comment`
+    );
+
+    // Create a map of existing comments by their GitHub URL
+    const existingComments = new Map(
+      jiraComments.comments
+        .map((comment) => {
+          // Match either "Comment URL: " or "Full comment available at: " plus the comment link (for truncated comments)
+          const githubUrlMatch =
+            comment.body.match(/Comment URL: (.*)/) ||
+            comment.body.match(/Full comment available at: (.*)/);
+          return githubUrlMatch ? [githubUrlMatch[1], comment] : null;
+        })
+        .filter(Boolean)
+    );
+
+    // Reverse comments to add oldest first to match Jira comment order (oldest at bottom, newest at top)
+    const githubCommentsAscending = githubComments.nodes.reverse();
+    let addedCommentCount = 0;
+    // Process each GitHub comment
+    for (const comment of githubCommentsAscending) {
+      // Skip if comment already exists in Jira
+      if (existingComments.has(comment.url)) {
+        existingComments.delete(comment.url);
+        continue;
+      }
+
+      // Format the comment body with GitHub metadata
+      let commentBody =
+        `Comment Author: ${comment.author.login}\n` +
+        `\n----\n\n${comment.body}\n\n----\n\n` +
+        `Comment Created: ${comment.createdAt}\n` +
+        `Comment URL: ${comment.url}\n`;
+
+      // Check if comment is too large (Jira has a limit of ~32KB)
+      // Ex: https://github.com/patternfly/patternfly-doc-core/issues/52#issuecomment-2922965458
+      if (commentBody.length > 30000) {
+        console.log(
+          ` - Comment from ${comment.author.login} is too large (${commentBody.length} chars). Truncating...`
+        );
+        // Truncate the comment and add a note
+        commentBody =
+          commentBody.substring(0, 5000) +
+          `\n\nComment was truncated due to size. Full comment available at: ${comment.url}`;
+      }
+      // Add the comment to Jira
+      await delay();
+      await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/comment`, {
+        body: commentBody,
+      });
+      addedCommentCount++;
+      // Log only if any comments are added
+      console.log(
+        ` - Added comment from ${comment.author.login} to Jira issue ${jiraIssueKey}`
+      );
+    }
+
+    // Remove any comments that no longer exist in GitHub
+    for (const [_, comment] of existingComments) {
+      await delay();
+      await jiraClient.delete(
+        `/rest/api/2/issue/${jiraIssueKey}/comment/${comment.id}`
+      );
+      console.log(
+        ` - Removed outdated comment from Jira issue ${jiraIssueKey}`
+      );
+    }
+
+    if (addedCommentCount > 0) {
+      console.log(` - Completed syncing ${addedCommentCount} new comments.`);
+    }
+  } catch (error) {
+    errorCollector.addError(
+      `Error syncing comments for Jira issue ${jiraIssueKey}`,
+      error
+    );
+  }
+}

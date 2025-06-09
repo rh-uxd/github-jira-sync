@@ -1,29 +1,78 @@
 import 'dotenv/config';
-import { jiraClient, repoIssues, delay } from './helpers.js';
+import { jiraClient, getRepoIssues } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
-import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
+
+export let jiraIssues = [];
+
+// Error collector to store errors with context
+class ErrorCollector {
+  constructor() {
+    this.errors = [];
+  }
+
+  addError(context, error) {
+    this.errors.push({
+      context,
+      message: error.message,
+      response: error?.response?.data,
+      stack: error.stack,
+    });
+  }
+
+  hasErrors() {
+    return this.errors.length > 0;
+  }
+
+  logErrors() {
+    if (!this.hasErrors()) return;
+
+    console.error('\n=== Sync Errors ===');
+    this.errors.forEach(({ context, message, response }) => {
+      console.error(`${context}: ${message}`);
+      if (response) {
+        console.error(`  Response: ${JSON.stringify(response)}`);
+      }
+    });
+    console.error('==================\n');
+  }
+
+  clear() {
+    this.errors = [];
+  }
+}
+
+// Create global error collector instance
+export const errorCollector = new ErrorCollector();
 
 async function syncIssues() {
   try {
+    // Clear any previous errors
+    errorCollector.clear();
+
     // Fetch all Jira issues for the specific repo/component
-    const { data: jiraIssues } = await jiraClient.get('/rest/api/2/search', {
+    const response = await jiraClient.get('/rest/api/2/search', {
       params: {
-        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${process.env.GITHUB_REPO}"`,
+        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${process.env.GITHUB_REPO}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
         maxResults: 1000,
-        fields: 'key,id,description,status',
+        fields: 'key,id,description,status, issuetype',
       },
     });
-    await delay(1000);
+
+    // Assign the issues to our exported variable
+    jiraIssues = response.data.issues;
 
     // Get GitHub issues from GraphQL response
-    const githubApiResponse = await repoIssues;
-    const githubIssues = githubApiResponse.repository.issues.nodes;
+    const githubApiResponse = await getRepoIssues();
+    // Sort by number to ensure consistent order, enables easier debugging
+    const githubIssues = githubApiResponse.repository.issues.nodes.sort(
+      (a, b) => a.number - b.number
+    );
 
     console.log(
-      `Found ${jiraIssues.issues.length} Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} GitHub issues`
+      `** Found ${jiraIssues.length} open Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} open GitHub issues **\n`
     );
 
     // Keep track of which Jira issues we've processed
@@ -34,6 +83,12 @@ async function syncIssues() {
       // Skip if the issue is a pull request (GraphQL doesn't return pull requests)
       if (issue.pull_request) {
         console.log(`Skipping pull request #${issue.number}`);
+        continue;
+      }
+
+      // Skip if the issue is an Initiative
+      if (issue?.issueType?.name === 'Initiative') {
+        console.log(`Skipping Initiative #${issue.number}\n`);
         continue;
       }
 
@@ -56,15 +111,19 @@ async function syncIssues() {
 
     // Check remaining Jira issues that weren't processed
     // This is to handle cases where Jira issues are not linked to any open GitHub issue
-    const unprocessedJiraIssues = jiraIssues.issues.filter(
+    const unprocessedJiraIssues = jiraIssues.filter(
       (issue) => !processedJiraIssues.has(issue.key)
     );
 
     if (unprocessedJiraIssues.length > 0) {
       handleUnprocessedJiraIssues(unprocessedJiraIssues);
     }
+
+    // Log any collected errors at the end
+    errorCollector.logErrors();
   } catch (error) {
-    console.error('Error syncing issues:', error.message, { error });
+    errorCollector.addError('Sync process', error);
+    errorCollector.logErrors();
   }
 }
 

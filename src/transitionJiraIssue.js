@@ -1,12 +1,13 @@
 import { jiraClient, delay } from './helpers.js';
+import { errorCollector } from './index.js';
 
 export async function transitionJiraIssue(jiraIssueKey, targetState) {
   try {
     // First, get available transitions for the issue
+    await delay();
     const { data: transitions } = await jiraClient.get(
       `/rest/api/2/issue/${jiraIssueKey}/transitions`
     );
-    await delay(1000);
 
     // Find the appropriate transition based on target state
     const transition = transitions.transitions.find(
@@ -14,12 +15,12 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
     );
 
     if (transition) {
+      await delay();
       await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/transitions`, {
         transition: {
           id: transition.id,
         },
       });
-      await delay(1000);
       console.log(
         ` - Transitioned Jira issue ${jiraIssueKey} to ${transition.name}`
       );
@@ -29,10 +30,9 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
       );
     }
   } catch (error) {
-    console.error(
-      'Error transitioning Jira issue:',
-      error.message,
-      error.response?.data
+    errorCollector.addError(
+      `Error transitioning Jira issue ${jiraIssueKey} to ${targetState}`,
+      error
     );
   }
 }
