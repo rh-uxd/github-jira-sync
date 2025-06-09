@@ -557,7 +557,10 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
     const existingComments = new Map(
       jiraComments.comments
         .map((comment) => {
-          const githubUrlMatch = comment.body.match(/Comment URL: (.*)/);
+          // Match either "Comment URL: " or "Full comment available at: " plus the comment link (for truncated comments)
+          const githubUrlMatch =
+            comment.body.match(/Comment URL: (.*)/) ||
+            comment.body.match(/Full comment available at: (.*)/);
           return githubUrlMatch ? [githubUrlMatch[1], comment] : null;
         })
         .filter(Boolean)
@@ -589,8 +592,8 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
         );
         // Truncate the comment and add a note
         commentBody =
-          commentBody.substring(0, 29000) +
-          `\n\n[Comment was truncated due to size. Full comment available at: ${comment.url}]`;
+          commentBody.substring(0, 5000) +
+          `\n\nComment was truncated due to size. Full comment available at: ${comment.url}`;
       }
       // Add the comment to Jira
       await delay();
