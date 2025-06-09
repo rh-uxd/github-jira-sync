@@ -7,6 +7,7 @@ import {
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
+import { errorCollector } from './index.js';
 
 export async function createChildIssues(
   parentJiraKey,
@@ -66,7 +67,7 @@ export async function createChildIssues(
     // Create new Jira issue & add remote link to GitHub issue
     const newJiraKey = await createNewJiraIssue(childIssue, subIssue);
     // If GH issue is closed, transition Jira issue to closed (cannot create a closed issue)
-    if (subIssue.state === 'Closed') {
+    if (subIssue.state === 'CLOSED') {
       await transitionJiraIssue(newJiraKey, 'Closed');
     }
     console.log(
@@ -80,7 +81,10 @@ export async function createChildIssues(
 
     return newJiraKey;
   } catch (error) {
-    console.error('Error creating child issues:', error.message);
+    errorCollector.addError(
+      `Error creating child issues for parent ${parentJiraKey}`,
+      error
+    );
   }
 }
 
@@ -90,7 +94,7 @@ export async function createJiraIssue(githubIssue) {
     const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
 
     // If GH issue is closed, transition Jira issue to closed
-    if (githubIssue.state === 'Closed') {
+    if (githubIssue.state === 'CLOSED') {
       await transitionJiraIssue(newJiraKey, 'Closed');
     }
 
@@ -109,10 +113,9 @@ export async function createJiraIssue(githubIssue) {
       `Created Jira issue ${newJiraKey} for GitHub issue #${githubIssue.number}\n`
     );
   } catch (error) {
-    console.error(
-      'Error creating Jira issue:',
-      error.message,
-      error.response.data
+    errorCollector.addError(
+      `Error creating Jira issue for GitHub issue #${githubIssue.number}`,
+      error
     );
   }
 }

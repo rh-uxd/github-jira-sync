@@ -9,6 +9,7 @@ import {
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
+import { errorCollector } from './index.js';
 
 async function findChildIssues(jiraIssueKey) {
   try {
@@ -21,7 +22,10 @@ async function findChildIssues(jiraIssueKey) {
     });
     return response.data.issues;
   } catch (error) {
-    console.error('Error finding child issues:', error.message, { error });
+    errorCollector.addError(
+      `Error finding child issues for ${jiraIssueKey}`,
+      error
+    );
     return [];
   }
 }
@@ -99,6 +103,9 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
                 name: 'Sub-task',
                 id: '5',
               };
+              console.log(
+                `  ! - Trying to update ${jiraIssue.key} to be a sub-task of ${parentJiraKey} may need to be done manually`
+              );
             }
             await editJiraIssue(jiraIssue.key, updatedData);
 
@@ -123,7 +130,10 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
       );
     }
   } catch (error) {
-    console.error('Error updating child issues:', error.message, { error });
+    errorCollector.addError(
+      `Error updating child issues for ${parentJiraKey} (GH #${githubIssue.number})`,
+      error
+    );
   }
 }
 
@@ -163,10 +173,9 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}\n`
     );
   } catch (error) {
-    console.error(
-      `Error updating Jira issue ${jiraIssue.key}:`,
-      error.message,
-      error?.response?.data
+    errorCollector.addError(
+      `Error updating Jira issue ${jiraIssue.key} (GH #${githubIssue.number})`,
+      error
     );
   }
 }

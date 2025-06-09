@@ -1,5 +1,5 @@
 import { jiraClient, delay } from './helpers.js';
-import { jiraIssues } from './index.js';
+import { jiraIssues, errorCollector } from './index.js';
 
 const isUpstreamUrlMatch = (jiraDescription, ghIssueLink) => {
   const ghUrlSplit = ghIssueLink.split('/');
@@ -72,10 +72,9 @@ const fetchJiraIssue = async (githubIssueLink) => {
 
     return foundIssue;
   } catch (error) {
-    console.error(
-      'Error finding Jira issue:',
-      error.message,
-      error.response.data
+    errorCollector.addError(
+      `Error finding Jira issue for GitHub issue ${githubIssueLink}`,
+      error
     );
     return null;
   }

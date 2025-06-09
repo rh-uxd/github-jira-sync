@@ -1,4 +1,5 @@
 import { jiraClient, delay } from './helpers.js';
+import { errorCollector } from './index.js';
 
 export async function transitionJiraIssue(jiraIssueKey, targetState) {
   try {
@@ -29,10 +30,9 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
       );
     }
   } catch (error) {
-    console.error(
-      'Error transitioning Jira issue:',
-      error.message,
-      error.response?.data
+    errorCollector.addError(
+      `Error transitioning Jira issue ${jiraIssueKey} to ${targetState}`,
+      error
     );
   }
 }

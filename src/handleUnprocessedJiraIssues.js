@@ -5,6 +5,7 @@ import {
   GET_ISSUE_DETAILS,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
+import { errorCollector } from './index.js';
 
 // Additional check only for unprocessed Jira issues
 // Find their GH issue and see if Jira issue needs to be transitioned to match GH state
@@ -52,6 +53,10 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
           );
         }
       } catch (error) {
+        errorCollector.addError(
+          `Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}`,
+          error
+        );
         console.log(
           `  !! - Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}.
   !! - Did the original Github issue transfer to a different repo?`

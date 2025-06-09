@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
+import { errorCollector } from './index.js';
 
 // Initialize Octokit with GraphQL support
 export const octokit = new Octokit({
@@ -246,7 +247,8 @@ export async function executeGraphQLQuery(query, variables) {
     const response = await octokit.graphql(query, variables);
     return response;
   } catch (error) {
-    console.error(`${error.name} - ${error.message}`);
+    errorCollector.addError('GraphQL query execution', error);
+    return null;
   }
 }
 
@@ -500,7 +502,10 @@ export async function getRepoIssues() {
       // Reset retry count on successful request
       retryCount = 0;
     } catch (error) {
-      console.error('Error fetching GitHub issues:', error.message);
+      errorCollector.addError(
+        `Error fetching GitHub issues (repo: ${process.env.GITHUB_REPO})`,
+        error
+      );
 
       // Handle rate limiting
       if (
@@ -621,6 +626,9 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
       console.log(` - Completed syncing ${addedCommentCount} new comments.`);
     }
   } catch (error) {
-    console.error('Error syncing comments:', error.message, { error });
+    errorCollector.addError(
+      `Error syncing comments for Jira issue ${jiraIssueKey}`,
+      error
+    );
   }
 }

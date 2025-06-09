@@ -7,8 +7,51 @@ import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
 
 export let jiraIssues = [];
 
+// Error collector to store errors with context
+class ErrorCollector {
+  constructor() {
+    this.errors = [];
+  }
+
+  addError(context, error) {
+    this.errors.push({
+      context,
+      message: error.message,
+      response: error?.response?.data,
+      stack: error.stack,
+    });
+  }
+
+  hasErrors() {
+    return this.errors.length > 0;
+  }
+
+  logErrors() {
+    if (!this.hasErrors()) return;
+
+    console.error('\n=== Sync Errors ===');
+    this.errors.forEach(({ context, message, response }) => {
+      console.error(`${context}: ${message}`);
+      if (response) {
+        console.error(`  Response: ${JSON.stringify(response)}`);
+      }
+    });
+    console.error('==================\n');
+  }
+
+  clear() {
+    this.errors = [];
+  }
+}
+
+// Create global error collector instance
+export const errorCollector = new ErrorCollector();
+
 async function syncIssues() {
   try {
+    // Clear any previous errors
+    errorCollector.clear();
+
     // Fetch all Jira issues for the specific repo/component
     const response = await jiraClient.get('/rest/api/2/search', {
       params: {
@@ -75,8 +118,12 @@ async function syncIssues() {
     if (unprocessedJiraIssues.length > 0) {
       handleUnprocessedJiraIssues(unprocessedJiraIssues);
     }
+
+    // Log any collected errors at the end
+    errorCollector.logErrors();
   } catch (error) {
-    console.error('Error syncing issues:', error.message, { error });
+    errorCollector.addError('Sync process', error);
+    errorCollector.logErrors();
   }
 }
 
