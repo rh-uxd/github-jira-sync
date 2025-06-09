@@ -155,6 +155,7 @@ const availableComponents = [
   'patternfly-a11y',
   'patternfly-design',
   'patternfly-design-kit',
+  'patternfly-doc-core',
   'patternfly-extension-seed',
   'patternfly-infra-issues',
   'patternfly-org',
@@ -226,9 +227,9 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   };
 
   // Epic name field is required if issue type is Epic
-  // if (jiraIssueType.jiraName === 'Epic') {
-  //   jiraIssue.fields['customfield_12311141'] = title;
-  // }
+  if (jiraIssueType.jiraName === 'Epic') {
+    jiraIssue.fields['customfield_12311141'] = title;
+  }
 
   // Add extra fields for new issues
   if (!isUpdateIssue) {
@@ -574,13 +575,23 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
       }
 
       // Format the comment body with GitHub metadata
-      const commentBody =
-        `${comment.body}\n\n----\n\n` +
-        `Author: ${comment.author.login}\n` +
-        `Created: ${comment.createdAt}\n` +
-        `Updated: ${comment.updatedAt}\n` +
+      let commentBody =
+        `Comment Author: ${comment.author.login}\n` +
+        `\n----\n\n${comment.body}\n\n----\n\n` +
+        `Comment Created: ${comment.createdAt}\n` +
         `Comment URL: ${comment.url}\n`;
 
+      // Check if comment is too large (Jira has a limit of ~32KB)
+      // Ex: https://github.com/patternfly/patternfly-doc-core/issues/52#issuecomment-2922965458
+      if (commentBody.length > 30000) {
+        console.log(
+          ` - Comment from ${comment.author.login} is too large (${commentBody.length} chars). Truncating...`
+        );
+        // Truncate the comment and add a note
+        commentBody =
+          commentBody.substring(0, 29000) +
+          `\n\n[Comment was truncated due to size. Full comment available at: ${comment.url}]`;
+      }
       // Add the comment to Jira
       await delay();
       await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/comment`, {
