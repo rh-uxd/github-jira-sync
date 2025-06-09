@@ -166,8 +166,6 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
     console.error(
       `Error updating Jira issue ${jiraIssue.key}:`,
       error.message,
-      { error },
-      error?.response?.headers,
       error?.response?.data
     );
   }

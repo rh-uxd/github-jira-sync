@@ -226,16 +226,15 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
     },
   };
 
-  // Epic name field is required if issue type is Epic
-  if (jiraIssueType.jiraName === 'Epic') {
-    jiraIssue.fields['customfield_12311141'] = title;
-  }
-
-  // Add extra fields for new issues
+  // Add required extra fields for new issue creation
   if (!isUpdateIssue) {
     jiraIssue.fields.project = {
       key: process.env.JIRA_PROJECT_KEY,
     };
+    // Epic name field is required on Epic creation
+    if (jiraIssueType.jiraName === 'Epic') {
+      jiraIssue.fields['customfield_12311141'] = title;
+    }
   }
 
   return jiraIssue;

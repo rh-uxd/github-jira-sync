@@ -6,6 +6,7 @@ import {
   syncCommentsToJira,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
+import { transitionJiraIssue } from './transitionJiraIssue.js';
 
 export async function createChildIssues(
   parentJiraKey,
@@ -21,7 +22,6 @@ export async function createChildIssues(
     const assignees = subIssue?.assignees?.nodes
       ?.map((a) => a.login)
       .join(', ');
-    // Create child issue in Jira
     const childIssue = {
       fields: {
         project: {
@@ -35,14 +35,6 @@ export async function createChildIssues(
         }\nAssignees: ${assignees}`,
       },
     };
-
-    // If GH issue is closed, set created Jira child issue status to closed
-    if (subIssue.state === 'Closed') {
-      childIssue.fields.status = {
-        name: 'Closed',
-        id: '6',
-      };
-    }
 
     if (jiraComponent) {
       // Only pass component if it exists
@@ -73,6 +65,10 @@ export async function createChildIssues(
 
     // Create new Jira issue & add remote link to GitHub issue
     const newJiraKey = await createNewJiraIssue(childIssue, subIssue);
+    // If GH issue is closed, transition Jira issue to closed (cannot create a closed issue)
+    if (subIssue.state === 'Closed') {
+      await transitionJiraIssue(newJiraKey, 'Closed');
+    }
     console.log(
       ` - Created child issue ${newJiraKey} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
     );
@@ -92,6 +88,11 @@ export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
     const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
+
+    // If GH issue is closed, transition Jira issue to closed
+    if (githubIssue.state === 'Closed') {
+      await transitionJiraIssue(newJiraKey, 'Closed');
+    }
 
     // Sync comments for new issue
     if (githubIssue.comments.totalCount > 0) {
