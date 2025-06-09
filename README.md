@@ -16,30 +16,29 @@ This Node.js application synchronizes GitHub issues to a Jira instance. It creat
    ```bash
    npm install
    ```
-3. Copy `.env.example` to `.env` and fill in your configuration:
+3. Create a `.env` file at the root to hold your credentials:
    ```bash
-   cp .env.example .env
+   touch .env
    ```
 
 4. Edit the `.env` file with your credentials:
    ```
    # GitHub Configuration
    GITHUB_TOKEN=your_github_personal_access_token
-   GITHUB_OWNER=your_github_username_or_org
-   GITHUB_REPO=your_repository_name
+   GITHUB_OWNER=patternfly
+   GITHUB_REPO=your_repository_name   // ex: patternfly-react
 
    # Jira Configuration
-   JIRA_URL=https://your-domain.atlassian.net
-   JIRA_EMAIL=your-email@example.com
-   JIRA_API_TOKEN=your_jira_api_token
-   JIRA_PROJECT_KEY=PROJ
+   JIRA_URL=https://issues.redhat.com/
+   JIRA_PAT=your_jira_personal_accesss_token
+   JIRA_PROJECT_KEY=PF
    ```
 
 ## Usage
 
 Run the sync:
 ```bash
-node src/index.js
+npm run sync
 ```
 
 The application will:
@@ -59,6 +58,10 @@ The application will:
 ## Error Handling
 
 The application includes basic error handling and will log any issues that occur during the sync process. Check the console output for any error messages.
+Known errors:
+- In Jira, epics cannot be children of other epics.  These require individual attention and manual updates accordingly.
+- Cannot change existing Jira issue to be a sub-task through the API, this must be done manually through the UI (case where a GH issue is a child of another GH issue, not epic).
+- Error will be logged if original GitHub issue that a Jira is linked to has been moved to another repo.  A new Jira should be created for that new GitHub issue when that repo syncs, so the Jira throwing the error can be closed out as a duplicate.
 
 ## Contributing
 
