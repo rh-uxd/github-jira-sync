@@ -79,16 +79,24 @@ async function syncIssues() {
     const processedJiraIssues = new Set();
 
     // Process GitHub issues
-    for (const issue of githubIssues) {
+    for (const [index, issue] of githubIssues.entries()) {
       // Skip if the issue is a pull request (GraphQL doesn't return pull requests)
       if (issue.pull_request) {
-        console.log(`Skipping pull request #${issue.number}`);
+        console.log(
+          `(${index + 1}/${githubIssues.length}) Skipping pull request #${
+            issue.number
+          }`
+        );
         continue;
       }
 
       // Skip if the issue is an Initiative
       if (issue?.issueType?.name === 'Initiative') {
-        console.log(`Skipping Initiative #${issue.number}\n`);
+        console.log(
+          `(${index + 1}/${githubIssues.length}) Skipping Initiative #${
+            issue.number
+          }\n`
+        );
         continue;
       }
 
@@ -98,12 +106,18 @@ async function syncIssues() {
       if (!jiraIssue) {
         // Create new Jira issue
         console.log(
-          `Creating new Jira issue for GitHub issue #${issue.number}`
+          `(${index + 1}/${
+            githubIssues.length
+          }) Creating new Jira issue for GitHub issue #${issue.number}`
         );
         await createJiraIssue(issue);
       } else {
         // Update existing Jira issue
-        console.log(`Updating existing Jira issue: ${jiraIssue.key}...`);
+        console.log(
+          `(${index + 1}/${
+            githubIssues.length
+          }) Updating existing Jira issue: ${jiraIssue.key}...`
+        );
         await updateJiraIssue(jiraIssue, issue);
         processedJiraIssues.add(jiraIssue.key);
       }
