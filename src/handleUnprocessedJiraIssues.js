@@ -16,10 +16,11 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
 
   for (const jiraIssue of unprocessedJiraIssues) {
     // Extract GitHub issue number from description
+    console.log(jiraIssue.key);
     const githubIdMatch = jiraIssue.fields.description
-      .match(/Upstream URL: (.+)/)[1]
-      .split('/')
-      .pop();
+      .match(/Upstream URL: (.+)/)?.[1]
+      ?.split('/')
+      ?.pop();
 
     if (githubIdMatch) {
       const githubNumber = parseInt(githubIdMatch);
