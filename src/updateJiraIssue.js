@@ -23,7 +23,7 @@ async function findChildIssues(jiraIssueKey) {
     return response.data.issues;
   } catch (error) {
     errorCollector.addError(
-      `Error finding child issues for ${jiraIssueKey}`,
+      `UPDATEJIRA: Error finding child issues for ${jiraIssueKey}`,
       error
     );
     return [];
@@ -131,7 +131,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
     }
   } catch (error) {
     errorCollector.addError(
-      `Error updating child issues for ${parentJiraKey} (GH #${githubIssue.number})`,
+      `UPDATEJIRA: Error updating child issues for ${parentJiraKey} (GH #${githubIssue.number})`,
       error
     );
   }
@@ -174,7 +174,7 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
     );
   } catch (error) {
     errorCollector.addError(
-      `Error updating Jira issue ${jiraIssue.key} (GH #${githubIssue.number})`,
+      `UPDATEJIRA: Error updating Jira issue ${jiraIssue.key} (GH #${githubIssue.number})`,
       error
     );
   }

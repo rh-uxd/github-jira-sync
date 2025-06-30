@@ -73,7 +73,7 @@ const fetchJiraIssue = async (githubIssueLink) => {
     return foundIssue;
   } catch (error) {
     errorCollector.addError(
-      `Error finding Jira issue for GitHub issue ${githubIssueLink}`,
+      `FINDJIRAISSUE: Error finding Jira issue for GitHub issue ${githubIssueLink}`,
       error
     );
     return null;
