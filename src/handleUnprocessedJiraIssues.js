@@ -29,7 +29,8 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
         await delay();
         const response = await executeGraphQLQuery(GET_ISSUE_DETAILS, {
           owner: process.env.GITHUB_OWNER,
-          repo: process.env.GITHUB_REPO,
+          // repo: process.env.GITHUB_REPO,
+          repo,
           issueNumber: githubNumber,
         });
 
@@ -50,12 +51,12 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
         } else {
           // GH issue found & open, likely duplicate Jira
           console.log(
-            `  !! - Github issue #${githubNumber} found for unprocessed Jira ${jiraIssue.key}, check Jira for duplicate issue or sync GH/Jira issue status.`
+            `  !! - Github issue #${githubNumber} found for unprocessed Jira ${jiraIssue.key}, check Jira for duplicate issue or sync GH/Jira issue status (Github Iniatives may be skipped).`
           );
         }
       } catch (error) {
         errorCollector.addError(
-          `Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}`,
+          `HANDLEUNPROCESSEDJIRAISSUES: Could not find GitHub issue #${githubNumber} for Jira issue ${jiraIssue.key}`,
           error
         );
         console.log(

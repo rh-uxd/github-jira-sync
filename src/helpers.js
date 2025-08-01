@@ -146,7 +146,7 @@ const issueTypeMappings = {
 export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
-const availableComponents = [
+export const availableComponents = [
   'AI-infra-ui-components',
   'chatbot',
   'design-tokens',
@@ -173,7 +173,6 @@ const availableComponents = [
   'react-topology',
   'react-user-feedback',
   'react-virtualized-extension',
-  'virtual-assistant',
 ];
 
 export const getJiraComponent = (repoName) =>
@@ -247,7 +246,7 @@ export async function executeGraphQLQuery(query, variables) {
     const response = await octokit.graphql(query, variables);
     return response;
   } catch (error) {
-    errorCollector.addError('GraphQL query execution', error);
+    errorCollector.addError('HELPERS: GraphQL query execution', error);
     return null;
   }
 }
@@ -451,9 +450,10 @@ export const GET_ISSUE_DETAILS = `
   }
 `;
 
-export async function getRepoIssues() {
+export async function getRepoIssues(repo) {
   // Validate environment variables
-  if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
+  // if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
+  if (!process.env.GITHUB_OWNER || !repo) {
     throw new Error(
       'Missing required environment variables: GITHUB_OWNER and/or GITHUB_REPO'
     );
@@ -470,8 +470,10 @@ export async function getRepoIssues() {
     try {
       const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
         owner: process.env.GITHUB_OWNER,
-        repo: process.env.GITHUB_REPO,
+        // repo: process.env.GITHUB_REPO,
+        repo,
         issuesCursor: cursor,
+        since: '2025-07-30T15:00:00Z',
       });
 
       // Validate response structure
@@ -484,7 +486,9 @@ export async function getRepoIssues() {
       // Handle empty repository or no issues
       if (!nodes || nodes.length === 0) {
         console.log(
-          `No issues found in repository ${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}`
+          `No issues found in repository ${process.env.GITHUB_OWNER}/${
+            /*process.env.GITHUB_REPO*/ repo
+          }`
         );
         break;
       }
@@ -503,7 +507,9 @@ export async function getRepoIssues() {
       retryCount = 0;
     } catch (error) {
       errorCollector.addError(
-        `Error fetching GitHub issues (repo: ${process.env.GITHUB_REPO})`,
+        `HELPERS: Error fetching GitHub issues (repo: ${
+          /*process.env.GITHUB_REPO*/ repo
+        })`,
         error
       );
 
@@ -612,6 +618,8 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
     }
 
     // Remove any comments that no longer exist in GitHub
+    // Ignore - we add comments directly in Jira intentionally
+    /*
     for (const [_, comment] of existingComments) {
       await delay();
       await jiraClient.delete(
@@ -621,13 +629,14 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
         ` - Removed outdated comment from Jira issue ${jiraIssueKey}`
       );
     }
+    */
 
     if (addedCommentCount > 0) {
       console.log(` - Completed syncing ${addedCommentCount} new comments.`);
     }
   } catch (error) {
     errorCollector.addError(
-      `Error syncing comments for Jira issue ${jiraIssueKey}`,
+      `HELPERS: Error syncing comments for Jira issue ${jiraIssueKey}`,
       error
     );
   }

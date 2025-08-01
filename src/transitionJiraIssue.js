@@ -31,7 +31,7 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
     }
   } catch (error) {
     errorCollector.addError(
-      `Error transitioning Jira issue ${jiraIssueKey} to ${targetState}`,
+      `TRANSITION: Error transitioning Jira issue ${jiraIssueKey} to ${targetState}`,
       error
     );
   }

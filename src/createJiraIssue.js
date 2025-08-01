@@ -82,7 +82,7 @@ export async function createChildIssues(
     return newJiraKey;
   } catch (error) {
     errorCollector.addError(
-      `Error creating child issues for parent ${parentJiraKey}`,
+      `CREATEJIRAISSUE: Error creating child issues for parent ${parentJiraKey}`,
       error
     );
   }
@@ -114,7 +114,7 @@ export async function createJiraIssue(githubIssue) {
     );
   } catch (error) {
     errorCollector.addError(
-      `Error creating Jira issue for GitHub issue #${githubIssue.number}`,
+      `CREATEJIRAISSUE: Error creating Jira issue for GitHub issue #${githubIssue.number}`,
       error
     );
   }

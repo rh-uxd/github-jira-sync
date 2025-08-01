@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { jiraClient, getRepoIssues } from './helpers.js';
+import { jiraClient, getRepoIssues, availableComponents } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
@@ -47,32 +47,38 @@ class ErrorCollector {
 // Create global error collector instance
 export const errorCollector = new ErrorCollector();
 
-async function syncIssues() {
+async function syncIssues(repo) {
+  /* DEBUG
+    debugger;
+    return;
+  */
   try {
+    jiraIssues = [];
     // Clear any previous errors
-    errorCollector.clear();
-
+    // errorCollector.clear();
     // Fetch all Jira issues for the specific repo/component
+    console.log('fetching Jira');
     const response = await jiraClient.get('/rest/api/2/search', {
       params: {
-        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${process.env.GITHUB_REPO}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
+        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${repo}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
         maxResults: 1000,
         fields: 'key,id,description,status, issuetype',
       },
     });
-
     // Assign the issues to our exported variable
     jiraIssues = response.data.issues;
-
     // Get GitHub issues from GraphQL response
-    const githubApiResponse = await getRepoIssues();
+    console.log('fetching GH');
+    const githubApiResponse = await getRepoIssues(repo);
     // Sort by number to ensure consistent order, enables easier debugging
     const githubIssues = githubApiResponse.repository.issues.nodes.sort(
       (a, b) => a.number - b.number
     );
 
     console.log(
-      `** Found ${jiraIssues.length} open Jira issues for repo ${process.env.GITHUB_REPO} and ${githubIssues.length} open GitHub issues **\n`
+      `** Found ${jiraIssues.length} open Jira issues for repo ${
+        /*process.env.GITHUB_REPO*/ repo
+      } and ${githubIssues.length} open GitHub issues **\n`
     );
 
     // Keep track of which Jira issues we've processed
@@ -130,16 +136,27 @@ async function syncIssues() {
     );
 
     if (unprocessedJiraIssues.length > 0) {
-      handleUnprocessedJiraIssues(unprocessedJiraIssues);
+      // await handleUnprocessedJiraIssues(unprocessedJiraIssues);
     }
 
     // Log any collected errors at the end
+    console.log(`\n=== ${repo.toUpperCase()} ERRORS ===\n`);
     errorCollector.logErrors();
+    console.log(`\n=== END ${repo.toUpperCase()} ERRORS ===\n`);
   } catch (error) {
-    errorCollector.addError('Sync process', error);
+    errorCollector.addError('INDEX: Sync process', error);
+    console.log(`\n=== ${repo.toUpperCase()} ERRORS ===\n`);
     errorCollector.logErrors();
+    console.log(`\n=== END ${repo.toUpperCase()} ERRORS ===\n`);
   }
 }
 
+// if (syncAll) {
+// If syncing all, loop through availableComponents
+for (const repo of availableComponents) {
+  await syncIssues(repo);
+}
+// } else {
 // Run the sync
-syncIssues();
+// syncIssues();
+// }
