@@ -36,10 +36,22 @@ This Node.js application synchronizes GitHub issues to a Jira instance. It creat
 
 ## Usage
 
-Run the sync:
+Run the sync with default date (hardcoded fallback is 7 days prior to current date):
 ```bash
 npm run sync
 ```
+
+Run the sync with a custom date:
+```bash
+npm run sync --since 2025-01-01T00:00:00Z
+```
+
+Or use the convenience script:
+```bash
+npm run sync:since 01-01-2025
+```
+
+**Date Format**: Use ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ) for the `--since` parameter, or use MM-DD-YYYY which will be converted to ISO 8601 format.
 
 The application will:
 1. Fetch all open GitHub issues from the specified repository

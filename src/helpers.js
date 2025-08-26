@@ -450,7 +450,7 @@ export const GET_ISSUE_DETAILS = `
   }
 `;
 
-export async function getRepoIssues(repo) {
+export async function getRepoIssues(repo, since) {
   // Validate environment variables
   // if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
   if (!process.env.GITHUB_OWNER || !repo) {
@@ -473,7 +473,7 @@ export async function getRepoIssues(repo) {
         // repo: process.env.GITHUB_REPO,
         repo,
         issuesCursor: cursor,
-        since: '2025-07-30T15:00:00Z',
+        since,
       });
 
       // Validate response structure

@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "sync": "node src/index.js",
+    "sync:since": "node src/index.js --since",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
