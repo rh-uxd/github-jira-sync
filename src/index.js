@@ -7,6 +7,38 @@ import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
 
 export let jiraIssues = [];
 
+// Parse command line arguments
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const options = {};
+  
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--since' && i + 1 < args.length) {
+      const sinceValue = args[i + 1];
+      
+      // Check if the value is in MM-DD-YYYY format
+      const mmddPattern = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
+      const match = sinceValue.match(mmddPattern);
+      
+      if (match) {
+        // Convert MM-DD-YYYY to ISO string
+        const month = parseInt(match[1]) - 1; // Month is 0-indexed in Date constructor
+        const day = parseInt(match[2]);
+        const year = parseInt(match[3]);
+        const date = new Date(year, month, day);
+        options.since = date.toISOString();
+      } else {
+        // Assume it's already in ISO format or another valid format
+        options.since = sinceValue;
+      }
+      
+      i++; // Skip the next argument since we consumed it
+    }
+  }
+  
+  return options;
+}
+
 // Error collector to store errors with context
 class ErrorCollector {
   constructor() {
@@ -47,7 +79,7 @@ class ErrorCollector {
 // Create global error collector instance
 export const errorCollector = new ErrorCollector();
 
-async function syncIssues(repo) {
+async function syncIssues(repo, since) {
   /* DEBUG
     debugger;
     return;
@@ -69,7 +101,7 @@ async function syncIssues(repo) {
     jiraIssues = response.data.issues;
     // Get GitHub issues from GraphQL response
     console.log('fetching GH');
-    const githubApiResponse = await getRepoIssues(repo);
+    const githubApiResponse = await getRepoIssues(repo, since);
     // Sort by number to ensure consistent order, enables easier debugging
     const githubIssues = githubApiResponse.repository.issues.nodes.sort(
       (a, b) => a.number - b.number
@@ -151,12 +183,17 @@ async function syncIssues(repo) {
   }
 }
 
-// if (syncAll) {
+// Parse command line arguments
+const options = parseArgs();
+const since = options.since || (() => {
+  const date = new Date();
+  date.setDate(date.getDate() - 7);
+  return date.toISOString();
+})(); // Default fallback: 7 days ago
+
+console.log(`Syncing issues since: ${since}`);
+
 // If syncing all, loop through availableComponents
 for (const repo of availableComponents) {
-  await syncIssues(repo);
+  await syncIssues(repo, since);
 }
-// } else {
-// Run the sync
-// syncIssues();
-// }
