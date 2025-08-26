@@ -473,7 +473,7 @@ export async function getRepoIssues(repo, since) {
         // repo: process.env.GITHUB_REPO,
         repo,
         issuesCursor: cursor,
-        since: since || '2025-08-14T15:00:00Z',
+        since,
       });
 
       // Validate response structure
