@@ -60,7 +60,7 @@ export const convertMarkdownToJira = (str) => {
   // Custom image fix - extracts img src and wraps in ! 
   let jiraMd = str.replaceAll(
     /<img\b[^>]*src="([^"]+)"[^>]*\/>/gi,   // ← matches <img … src="…" … />
-    '!$1|width=30%!'                                  // ← wrap the captured URL in ! & set width to 30%
+    '!$1|width=30%!'                        // ← wrap the captured URL in ! & set width to 30%
   );
   jiraMd = j2m.to_jira(jiraMd); // default replacements
   return jiraMd;
