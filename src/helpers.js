@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import { errorCollector } from './index.js';
+import j2m from 'jira2md';
 
 // Initialize Octokit with GraphQL support
 export const octokit = new Octokit({
@@ -209,7 +210,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
     fields: {
       summary: title,
       description: `${
-        body || ''
+        body ? j2m.to_jira(body) : ''
       }\n\n----\n\nGH Issue ${number}\nUpstream URL: ${url}\nReporter: ${
         author?.login || ''
       }\nAssignees: ${assigneeLogins.join(', ')}`,

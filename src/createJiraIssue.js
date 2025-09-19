@@ -8,6 +8,7 @@ import {
 import { updateChildIssues } from './updateJiraIssue.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { errorCollector } from './index.js';
+import j2m from 'jira2md';
 
 export async function createChildIssues(
   parentJiraKey,
@@ -29,7 +30,7 @@ export async function createChildIssues(
           key: process.env.JIRA_PROJECT_KEY,
         },
         summary: subIssue.title,
-        description: `${subIssue?.body || ''}\n\n----\n\nGH Issue ${
+        description: `${subIssue?.body ? j2m.to_jira(subIssue.body) : ''}\n\n----\n\nGH Issue ${
           subIssue.number
         }\nUpstream URL: ${subIssue.url}\nReporter: ${
           subIssue?.author?.login || ''
