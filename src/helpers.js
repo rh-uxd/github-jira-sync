@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import { errorCollector } from './index.js';
+import j2m from 'jira2md';
 
 // Initialize Octokit with GraphQL support
 export const octokit = new Octokit({
@@ -55,6 +56,16 @@ export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
 export const delay = (ms = 1000) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+export const convertMarkdownToJira = (str) => {
+  // Custom image fix - extracts img src and wraps in ! 
+  let jiraMd = str.replaceAll(
+    /<img\b[^>]*src="([^"]+)"[^>]*\/>/gi,   // ← matches <img … src="…" … />
+    '!$1|width=30%!'                        // ← wrap the captured URL in ! & set width to 30%
+  );
+  jiraMd = j2m.to_jira(jiraMd); // default replacements
+  return jiraMd;
+};
+  
 const platformTeamUsers = {
   nicolethoen: 'nthoen',
   dlabaj: 'dlabaj',
@@ -209,7 +220,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
     fields: {
       summary: title,
       description: `${
-        body || ''
+        body ? convertMarkdownToJira(body) : ''
       }\n\n----\n\nGH Issue ${number}\nUpstream URL: ${url}\nReporter: ${
         author?.login || ''
       }\nAssignees: ${assigneeLogins.join(', ')}`,

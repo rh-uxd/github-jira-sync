@@ -4,6 +4,7 @@ import {
   getJiraComponent,
   createNewJiraIssue,
   syncCommentsToJira,
+  convertMarkdownToJira,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
@@ -29,7 +30,7 @@ export async function createChildIssues(
           key: process.env.JIRA_PROJECT_KEY,
         },
         summary: subIssue.title,
-        description: `${subIssue?.body || ''}\n\n----\n\nGH Issue ${
+        description: `${subIssue?.body ? convertMarkdownToJira(subIssue.body) : ''}\n\n----\n\nGH Issue ${
           subIssue.number
         }\nUpstream URL: ${subIssue.url}\nReporter: ${
           subIssue?.author?.login || ''
