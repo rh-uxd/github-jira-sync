@@ -29,7 +29,6 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
         await delay();
         const response = await executeGraphQLQuery(GET_ISSUE_DETAILS, {
           owner: process.env.GITHUB_OWNER,
-          // repo: process.env.GITHUB_REPO,
           repo,
           issueNumber: githubNumber,
         });
