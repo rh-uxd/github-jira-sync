@@ -1,0 +1,52 @@
+name: Daily GitHub-Jira Sync
+
+on:
+  schedule:
+    # Runs at 10:00 UTC every day (5 AM EST / 6 AM EDT)
+    # The cron string is 'minute hour day-of-month month day-of-week'
+    - cron: '0 10 * * *'
+  # Allows you to manually trigger the workflow from the Actions tab
+  workflow_dispatch:
+    inputs:
+      since_date:
+        description: 'Date to sync issues since (MM-DD-YYYY or ISO format). Leave blank for default (7 days ago)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  sync-github-jira:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Check out the repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Node.js environment
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # Step 4: Run GitHub-Jira sync
+      - name: Execute GitHub-Jira Sync
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_OWNER: ${{ secrets.GH_OWNER }}
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_PAT: ${{ secrets.JIRA_PAT }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+        run: |
+          if [[ "${{ github.event.inputs.since_date }}" != "" ]]; then
+            echo "Running sync with custom date: ${{ github.event.inputs.since_date }}"
+            node src/index.js --since "${{ github.event.inputs.since_date }}"
+          else
+            echo "Running sync with default date (7 days ago)"
+            node src/index.js
+          fi
