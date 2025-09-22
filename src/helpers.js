@@ -5,7 +5,7 @@ import j2m from 'jira2md';
 
 // Initialize Octokit with GraphQL support
 export const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
+  auth: process.env.GH_TOKEN,
   baseUrl: 'https://api.github.com',
 });
 
@@ -463,9 +463,9 @@ export const GET_ISSUE_DETAILS = `
 
 export async function getRepoIssues(repo, since) {
   // Validate environment variables
-  if (!process.env.GITHUB_OWNER || !repo) {
+  if (!process.env.GH_OWNER || !repo) {
     throw new Error(
-      'Missing required environment variables: GITHUB_OWNER and/or GITHUB_REPO'
+      'Missing required environment variables: GH_OWNER and/or GH_REPO'
     );
   }
 
@@ -479,7 +479,7 @@ export async function getRepoIssues(repo, since) {
   while (hasNextPage) {
     try {
       const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
-        owner: process.env.GITHUB_OWNER,
+        owner: process.env.GH_OWNER,
         repo,
         issuesCursor: cursor,
         since,
@@ -495,7 +495,7 @@ export async function getRepoIssues(repo, since) {
       // Handle empty repository or no issues
       if (!nodes || nodes.length === 0) {
         console.log(
-          `No issues found in repository ${process.env.GITHUB_OWNER}/${
+          `No issues found in repository ${process.env.GH_OWNER}/${
             repo
           }`
         );

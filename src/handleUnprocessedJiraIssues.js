@@ -28,7 +28,7 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
         // Get issue details using GraphQL
         await delay();
         const response = await executeGraphQLQuery(GET_ISSUE_DETAILS, {
-          owner: process.env.GITHUB_OWNER,
+          owner: process.env.GH_OWNER,
           repo,
           issueNumber: githubNumber,
         });

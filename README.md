@@ -25,8 +25,8 @@ This Node.js application automatically synchronizes GitHub issues across all Pat
 4. Edit the `.env` file with your credentials:
    ```
    # GitHub Configuration
-   GITHUB_TOKEN=your_github_personal_access_token
-   GITHUB_OWNER=patternfly
+   GH_TOKEN=your_GH_personal_access_token
+   GH_OWNER=patternfly
 
    # Jira Configuration
    JIRA_URL=https://issues.redhat.com/
