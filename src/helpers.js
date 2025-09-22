@@ -463,7 +463,6 @@ export const GET_ISSUE_DETAILS = `
 
 export async function getRepoIssues(repo, since) {
   // Validate environment variables
-  // if (!process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) {
   if (!process.env.GITHUB_OWNER || !repo) {
     throw new Error(
       'Missing required environment variables: GITHUB_OWNER and/or GITHUB_REPO'
@@ -481,7 +480,6 @@ export async function getRepoIssues(repo, since) {
     try {
       const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
         owner: process.env.GITHUB_OWNER,
-        // repo: process.env.GITHUB_REPO,
         repo,
         issuesCursor: cursor,
         since,
@@ -498,7 +496,7 @@ export async function getRepoIssues(repo, since) {
       if (!nodes || nodes.length === 0) {
         console.log(
           `No issues found in repository ${process.env.GITHUB_OWNER}/${
-            /*process.env.GITHUB_REPO*/ repo
+            repo
           }`
         );
         break;
@@ -519,7 +517,7 @@ export async function getRepoIssues(repo, since) {
     } catch (error) {
       errorCollector.addError(
         `HELPERS: Error fetching GitHub issues (repo: ${
-          /*process.env.GITHUB_REPO*/ repo
+          repo
         })`,
         error
       );

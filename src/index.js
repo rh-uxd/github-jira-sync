@@ -109,7 +109,7 @@ async function syncIssues(repo, since) {
 
     console.log(
       `** Found ${jiraIssues.length} open Jira issues for repo ${
-        /*process.env.GITHUB_REPO*/ repo
+        repo
       } and ${githubIssues.length} open GitHub issues **\n`
     );
 
