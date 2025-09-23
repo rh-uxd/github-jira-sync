@@ -92,7 +92,7 @@ async function syncIssues(repo, since) {
     console.log('fetching Jira');
     const response = await jiraClient.get('/rest/api/2/search', {
       params: {
-        jql: `project = ${process.env.JIRA_PROJECT_KEY} AND component = "${repo}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
+        jql: `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
         maxResults: 1000,
         fields: 'key,id,description,status, issuetype',
       },

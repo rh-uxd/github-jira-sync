@@ -27,7 +27,7 @@ export async function createChildIssues(
     const childIssue = {
       fields: {
         project: {
-          key: process.env.JIRA_PROJECT_KEY,
+          key: 'PF',
         },
         summary: subIssue.title,
         description: `${subIssue?.body ? convertMarkdownToJira(subIssue.body) : ''}\n\n----\n\nGH Issue ${
