@@ -11,7 +11,7 @@ export const octokit = new Octokit({
 
 // Initialize Jira client
 export const jiraClient = axios.create({
-  baseURL: process.env.JIRA_URL,
+  baseURL: 'https://issues.redhat.com/',
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -240,7 +240,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   // Add required extra fields for new issue creation
   if (!isUpdateIssue) {
     jiraIssue.fields.project = {
-      key: process.env.JIRA_PROJECT_KEY,
+      key: 'PF',
     };
     // Epic name field is required on Epic creation
     if (jiraIssueType.jiraName === 'Epic') {
@@ -463,9 +463,9 @@ export const GET_ISSUE_DETAILS = `
 
 export async function getRepoIssues(repo, since) {
   // Validate environment variables
-  if (!process.env.GH_OWNER || !repo) {
+  if (!repo) {
     throw new Error(
-      'Missing required environment variables: GH_OWNER and/or GH_REPO'
+      'Missing required argument: repo'
     );
   }
 
@@ -475,11 +475,12 @@ export async function getRepoIssues(repo, since) {
   let cursor = null;
   let retryCount = 0;
   const MAX_RETRIES = 3;
+  const ghOwner = 'patternfly';
 
   while (hasNextPage) {
     try {
       const response = await executeGraphQLQuery(GET_ALL_REPO_ISSUES, {
-        owner: process.env.GH_OWNER,
+        owner: ghOwner,
         repo,
         issuesCursor: cursor,
         since,
@@ -487,6 +488,7 @@ export async function getRepoIssues(repo, since) {
 
       // Validate response structure
       if (!response?.repository?.issues) {
+        debugger;
         throw new Error('Invalid response structure from GitHub API');
       }
 
@@ -495,7 +497,7 @@ export async function getRepoIssues(repo, since) {
       // Handle empty repository or no issues
       if (!nodes || nodes.length === 0) {
         console.log(
-          `No issues found in repository ${process.env.GH_OWNER}/${
+          `No issues found in repository patternfly/${
             repo
           }`
         );

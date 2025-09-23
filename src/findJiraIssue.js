@@ -32,7 +32,7 @@ export async function findJiraIssue(githubIssueLink) {
 const fetchJiraIssue = async (githubIssueLink) => {
   // Note: Jira API requires escaped quotes in JQL query for exact match
   // https://support.atlassian.com/jira-software-cloud/docs/search-for-issues-using-the-text-field/#Exact-searches--phrases-
-  const jql = `project = ${process.env.JIRA_PROJECT_KEY} AND description ~ "\\"Upstream URL: ${githubIssueLink}\\""`;
+  const jql = `project = PF AND description ~ "\\"Upstream URL: ${githubIssueLink}\\""`;
   try {
     await delay();
     const response = await jiraClient.get('/rest/api/2/search', {

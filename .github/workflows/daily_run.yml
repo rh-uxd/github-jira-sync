@@ -38,10 +38,7 @@ jobs:
       - name: Execute GitHub-Jira Sync
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GH_OWNER: ${{ secrets.GH_OWNER }}
-          JIRA_URL: ${{ secrets.JIRA_URL }}
           JIRA_PAT: ${{ secrets.JIRA_PAT }}
-          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
         run: |
           if [[ "${{ github.event.inputs.since_date }}" != "" ]]; then
             echo "Running sync with custom date: ${{ github.event.inputs.since_date }}"
