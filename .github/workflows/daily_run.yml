@@ -5,6 +5,8 @@ on:
     # Runs at 10:00 UTC every day (5 AM EST / 6 AM EDT)
     # The cron string is 'minute hour day-of-month month day-of-week'
     - cron: '0 10 * * *'
+    # Additional run at 18:00 UTC every Wednesday (1 PM EST)
+    - cron: '0 18 * * 3'
   # Allows you to manually trigger the workflow from the Actions tab
   workflow_dispatch:
     inputs:
