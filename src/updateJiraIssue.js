@@ -124,7 +124,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
 
     // Close any remaining Jira child issues that no longer exist in GitHub
     for (const [_, child] of existingChildIssuesMap) {
-      await transitionJiraIssue(child.key, 'Done');
+      await transitionJiraIssue(child.key, 'Closed');
       console.log(
         ` - Closed child issue ${child.key} as it's no longer open in GitHub`
       );
@@ -157,12 +157,21 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
     }
 
     // Check if Jira issue is closed, needs to be reopened
-    if (jiraIssue.fields.status.name === 'Closed') {
+    if (githubIssue.state === 'OPEN' && jiraIssue.fields.status.name === 'Closed') {
       console.log(
         ` - GitHub issue #${githubIssue.number} is open but Jira issue ${jiraIssue.key} is closed, transitioning to New`
       );
       await delay();
       await transitionJiraIssue(jiraIssue.key, 'New');
+    }
+
+    // Check if GitHub issue is closed, needs to close Jira issue
+    if (githubIssue.state === 'CLOSED' && jiraIssue.fields.status.name !== 'Closed') {
+      console.log(
+        ` - GitHub issue #${githubIssue.number} is closed but Jira issue ${jiraIssue.key} is open, transitioning to Done`
+      );
+      await delay();
+      await transitionJiraIssue(jiraIssue.key, 'Closed');
     }
 
     // Update child issues
