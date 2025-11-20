@@ -269,7 +269,7 @@ export const GET_ALL_REPO_ISSUES = `
     $repo: String!
     $numIssuesToFetch: Int = 100
     $issuesCursor: String
-    $issueStates: [IssueState!] = [OPEN]
+    $issueStates: [IssueState!] = [OPEN, CLOSED]
     $numLabelsPerIssue: Int = 10
     $numAssigneesPerIssue: Int = 10
     $numCommentsPerIssue: Int = 20

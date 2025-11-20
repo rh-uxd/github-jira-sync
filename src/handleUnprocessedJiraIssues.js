@@ -9,7 +9,7 @@ import { errorCollector } from './index.js';
 
 // Additional check only for unprocessed Jira issues
 // Find their GH issue and see if Jira issue needs to be transitioned to match GH state
-export async function handleUnprocessedJiraIssues(unprocessedJiraIssues) {
+export async function handleUnprocessedJiraIssues(unprocessedJiraIssues, repo) {
   console.log(
     `Found ${unprocessedJiraIssues.length} Jira issues that weren't updated. Checking their GitHub status...`
   );

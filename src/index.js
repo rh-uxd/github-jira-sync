@@ -168,7 +168,8 @@ async function syncIssues(repo, since) {
     );
 
     if (unprocessedJiraIssues.length > 0) {
-      // await handleUnprocessedJiraIssues(unprocessedJiraIssues);
+      // Uncomment to process all open Jira issues regardless of GitHub status
+      // await handleUnprocessedJiraIssues(unprocessedJiraIssues, repo);
     }
 
     // Log any collected errors at the end
