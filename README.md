@@ -116,7 +116,7 @@ The application includes comprehensive error handling with detailed logging and 
 
 ## Supported PatternFly Repositories
 
-The application automatically syncs issues from all 27 PatternFly repositories:
+The application automatically syncs issues from all 28 PatternFly repositories:
 
 - AI-infra-ui-components
 - chatbot
@@ -125,11 +125,13 @@ The application automatically syncs issues from all 27 PatternFly repositories:
 - mission-control-dashboard
 - patternfly
 - patternfly-a11y
+- patternfly-cli
 - patternfly-design
 - patternfly-design-kit
 - patternfly-doc-core
 - patternfly-extension-seed
 - patternfly-infra-issues
+- patternfly-mcp
 - patternfly-org
 - patternfly-quickstarts
 - patternfly-react
