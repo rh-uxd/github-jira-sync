@@ -79,7 +79,7 @@ class ErrorCollector {
 // Create global error collector instance
 export const errorCollector = new ErrorCollector();
 
-async function syncIssues(repo, since) {
+async function syncIssues(repo, owner, since) {
   /* DEBUG
     debugger;
     return;
@@ -101,7 +101,7 @@ async function syncIssues(repo, since) {
     jiraIssues = response.data.issues;
     // Get GitHub issues from GraphQL response
     console.log('fetching GH');
-    const githubApiResponse = await getRepoIssues(repo, since);
+    const githubApiResponse = await getRepoIssues(repo, owner, since);
     // Sort by number to ensure consistent order, enables easier debugging
     const githubIssues = githubApiResponse.repository.issues.nodes.sort(
       (a, b) => a.number - b.number
@@ -195,6 +195,6 @@ const since = options.since || (() => {
 console.log(`Syncing issues since: ${since}`);
 
 // If syncing all, loop through availableComponents
-for (const repo of availableComponents) {
-  await syncIssues(repo, since);
+for (const {name, owner} of availableComponents) {
+  await syncIssues(name, owner, since);
 }
