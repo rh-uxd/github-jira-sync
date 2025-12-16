@@ -158,38 +158,128 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
-  'AI-infra-ui-components',
-  'chatbot',
-  'design-tokens',
-  'icons',
-  'mission-control-dashboard',
-  'patternfly',
-  'patternfly-a11y',
-  'patternfly-cli',
-  'patternfly-design',
-  'patternfly-design-kit',
-  'patternfly-doc-core',
-  'patternfly-extension-seed',
-  'patternfly-infra-issues',
-  'patternfly-mcp',
-  'patternfly-org',
-  'patternfly-quickstarts',
-  'patternfly-react',
-  'patternfly-react-seed',
-  'pf-codemods',
-  'pf-roadmap',
-  'react-catalog-view',
-  'react-component-groups',
-  'react-console',
-  'react-data-view',
-  'react-log-viewer',
-  'react-topology',
-  'react-user-feedback',
-  'react-virtualized-extension',
+  {
+    name: 'AI-infra-ui-components',
+    owner: 'patternfly',
+  },
+  {
+    name: 'chatbot',
+    owner: 'patternfly',
+  },
+  {
+    name: 'design-tokens',
+    owner: 'patternfly',
+  },
+  {
+    name: 'icons',
+    owner: 'patternfly',
+  },
+  {
+    name: 'mission-control-dashboard',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-a11y',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-cli',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-design',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-design-kit',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-doc-core',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-extension-seed',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-infra-issues',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-mcp',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-org',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-quickstarts',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-react',
+    owner: 'patternfly',
+  },
+  {
+    name: 'patternfly-react-seed',
+    owner: 'patternfly',
+  },
+  {
+    name: 'pf-codemods',
+    owner: 'patternfly',
+  },
+  {
+    name: 'pf-roadmap',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-catalog-view',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-component-groups',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-console',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-data-view',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-log-viewer',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-topology',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-user-feedback',
+    owner: 'patternfly',
+  },
+  {
+    name: 'react-virtualized-extension',
+    owner: 'patternfly',
+  },
+  {
+    name: 'github-jira-sync',
+    owner: 'rh-uxd'
+  }
 ];
 
 export const getJiraComponent = (repoName) =>
-  availableComponents.includes(repoName) ? repoName : null;
+  availableComponents.some((component) => component.name === repoName)
+    ? repoName
+    : null;
 
 export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   const {
@@ -463,7 +553,7 @@ export const GET_ISSUE_DETAILS = `
   }
 `;
 
-export async function getRepoIssues(repo, since) {
+export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
   // Validate environment variables
   if (!repo) {
     throw new Error(
@@ -477,7 +567,6 @@ export async function getRepoIssues(repo, since) {
   let cursor = null;
   let retryCount = 0;
   const MAX_RETRIES = 3;
-  const ghOwner = 'patternfly';
 
   while (hasNextPage) {
     try {
@@ -498,11 +587,7 @@ export async function getRepoIssues(repo, since) {
 
       // Handle empty repository or no issues
       if (!nodes || nodes.length === 0) {
-        console.log(
-          `No issues found in repository patternfly/${
-            repo
-          }`
-        );
+        console.log(`No issues found in repository ${ghOwner}/${repo}`);
         break;
       }
 
