@@ -587,11 +587,7 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
 
       // Handle empty repository or no issues
       if (!nodes || nodes.length === 0) {
-        console.log(
-          `No issues found in repository patternfly/${
-            repo
-          }`
-        );
+        console.log(`No issues found in repository ${ghOwner}/${repo}`);
         break;
       }
 
