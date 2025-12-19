@@ -579,15 +579,13 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
 
       // Validate response structure
       if (!response?.repository?.issues) {
-        debugger;
         throw new Error('Invalid response structure from GitHub API');
       }
 
       const { nodes, pageInfo } = response.repository.issues;
 
-      // Handle empty repository or no issues
+      // Handle empty repository or no matching issues
       if (!nodes || nodes.length === 0) {
-        console.log(`No issues found in repository ${ghOwner}/${repo}`);
         break;
       }
 
@@ -688,7 +686,7 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
       // Format the comment body with GitHub metadata
       let commentBody =
         `Comment Author: ${comment.author.login}\n` +
-        `\n----\n\n${comment.body}\n\n----\n\n` +
+        `\n----\n\n${convertMarkdownToJira(comment.body)}\n\n----\n\n` +
         `Comment Created: ${comment.createdAt}\n` +
         `Comment URL: ${comment.url}\n`;
 
@@ -714,20 +712,6 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
         ` - Added comment from ${comment.author.login} to Jira issue ${jiraIssueKey}`
       );
     }
-
-    // Remove any comments that no longer exist in GitHub
-    // Ignore - we add comments directly in Jira intentionally
-    /*
-    for (const [_, comment] of existingComments) {
-      await delay();
-      await jiraClient.delete(
-        `/rest/api/2/issue/${jiraIssueKey}/comment/${comment.id}`
-      );
-      console.log(
-        ` - Removed outdated comment from Jira issue ${jiraIssueKey}`
-      );
-    }
-    */
 
     if (addedCommentCount > 0) {
       console.log(` - Completed syncing ${addedCommentCount} new comments.`);
