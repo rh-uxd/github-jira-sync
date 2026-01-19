@@ -1,9 +1,13 @@
 import 'dotenv/config';
-import { jiraClient, getRepoIssues, availableComponents } from './helpers.js';
+import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
 import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
+import {
+  closeGitHubIssuesForClosedJira,
+  createGitHubIssuesForManualJira,
+} from './syncJiraToGitHub.js';
 
 export let jiraIssues = [];
 
@@ -51,7 +55,27 @@ function parseArgs() {
       
       // Skip the next argument since we consumed it
       i++;
+    } else if (args[i] === '--direction' && i + 1 < args.length) {
+      const directionValue = args[i + 1];
+      const validDirections = ['github-to-jira', 'jira-to-github', 'both'];
+      
+      if (validDirections.includes(directionValue)) {
+        options.direction = directionValue;
+      } else {
+        console.error(
+          `** ERROR: Invalid direction: ${directionValue}\nValid values: ${validDirections.join(', ')}\nDefaulting to 'both'`
+        );
+        options.direction = 'both';
+      }
+      
+      // Skip the next argument since we consumed it
+      i++;
     }
+  }
+  
+  // Default direction to 'both' if not provided
+  if (!options.direction) {
+    options.direction = 'both';
   }
   
   return options;
@@ -102,12 +126,52 @@ const fetchJiraIssues = async (owner, repo, since) => {
     params: {
       jql: `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
       maxResults: 1000,
-      fields: 'key,id,description,status, issuetype',
+      fields: 'key,id,description,status,assignee,issuetype',
     },
   });
   const jiraIssues = response?.data?.issues || [];
   console.log(`    --> Found ${jiraIssues.length} open Jira issues for Jira component ${ repo }`); 
   return jiraIssues;
+};
+
+const fetchClosedJiraIssues = async (owner, repo, since) => {
+  console.log(` - fetching closed Jira issues for component ${repo}...`);
+  // Format since date for Jira JQL (Jira uses format: YYYY-MM-DD HH:mm)
+  const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
+  const response = await jiraClient.get('/rest/api/2/search', {
+    params: {
+      jql: `project = PF AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+      maxResults: 1000,
+      fields: 'key,id,description,status,assignee,issuetype',
+    },
+  });
+  const closedIssues = response?.data?.issues || [];
+  // Filter to only issues with Upstream URL
+  const closedIssuesWithUpstream = closedIssues.filter((issue) =>
+    hasUpstreamUrl(issue.fields.description)
+  );
+  console.log(`    --> Found ${closedIssuesWithUpstream.length} closed Jira issues with GitHub links for component ${repo} (updated since ${since})`);
+  return closedIssuesWithUpstream;
+};
+
+const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
+  console.log(` - fetching manually created Jira issues for component ${repo}...`);
+  // Format since date for Jira JQL
+  const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
+  const response = await jiraClient.get('/rest/api/2/search', {
+    params: {
+      jql: `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+      maxResults: 1000,
+      fields: 'key,id,summary,description,status,assignee,issuetype,reporter,components',
+    },
+  });
+  const allIssues = response?.data?.issues || [];
+  // Filter to only issues without Upstream URL (manually created, not synced from GitHub)
+  const manualIssues = allIssues.filter((issue) =>
+    !hasUpstreamUrl(issue.fields.description)
+  );
+  console.log(`    --> Found ${manualIssues.length} manually created Jira issues for component ${repo} (created since ${since}, without Upstream URL)`);
+  return manualIssues;
 };
 
 const fetchGitHubIssues = async (owner, repo, since) => {
@@ -122,54 +186,72 @@ const fetchGitHubIssues = async (owner, repo, since) => {
   return githubIssues;
 };
 
-async function syncIssues(owner, repo, since) {
-  console.log(`\n=== START Syncing issues for repo ${ owner }/${ repo } updated since ${since} ===\n`);
+async function syncIssues(owner, repo, since, direction = 'both') {
+  console.log(`\n=== START Syncing issues for repo ${ owner }/${ repo } updated since ${since} (direction: ${direction}) ===\n`);
   try {
     // Clear any previous errors
     // errorCollector.clear();
 
-    // Fetch all open Jira issues for the specific repo/component, save to exported variable
-    jiraIssues = await fetchJiraIssues(owner, repo, since);
+    // GitHub → Jira sync
+    if (direction === 'github-to-jira' || direction === 'both') {
+      // Fetch all open Jira issues for the specific repo/component, save to exported variable
+      jiraIssues = await fetchJiraIssues(owner, repo, since);
 
-    // Fetch all updated GitHub issues from GraphQL response
-    const githubIssues = await fetchGitHubIssues(owner, repo, since);
+      // Fetch all updated GitHub issues from GraphQL response
+      const githubIssues = await fetchGitHubIssues(owner, repo, since);
 
-    // Keep track of which Jira issues we've processed
-    const processedJiraIssues = new Set();
+      // Keep track of which Jira issues we've processed
+      const processedJiraIssues = new Set();
 
-    // Process GitHub issues
-    for (const [index, issue] of githubIssues.entries()) {
-      // Skip if the issue is a pull request (GraphQL doesn't return pull requests) or an Initiative
-      if (issue.pull_request || issue?.issueType?.name === 'Initiative') {
-        console.log(`(${index + 1}/${githubIssues.length}) Skipping ${issue.pull_request ? 'pull request' : 'Initiative'} #${ issue.number}`);
-        continue;
+      // Process GitHub issues
+      for (const [index, issue] of githubIssues.entries()) {
+        // Skip if the issue is a pull request (GraphQL doesn't return pull requests) or an Initiative
+        if (issue.pull_request || issue?.issueType?.name === 'Initiative') {
+          console.log(`(${index + 1}/${githubIssues.length}) Skipping ${issue.pull_request ? 'pull request' : 'Initiative'} #${ issue.number}`);
+          continue;
+        }
+
+        // Find the corresponding Jira issue
+        const jiraIssue = await findJiraIssue(issue.url);
+
+        if (!jiraIssue) {
+          // Create new Jira issue
+          console.log(`(${index + 1}/${ githubIssues.length }) Creating new Jira issue for GitHub issue #${issue.number}`);
+          await createJiraIssue(issue);
+        } else {
+          // Update existing Jira issue
+          console.log(`(${index + 1}/${githubIssues.length}) Updating existing Jira issue: ${jiraIssue.key}`);
+          await updateJiraIssue(jiraIssue, issue);
+          processedJiraIssues.add(jiraIssue.key);
+        }
       }
 
-      // Find the corresponding Jira issue
-      const jiraIssue = await findJiraIssue(issue.url);
+      // Check remaining Jira issues that weren't processed
+      // This is to handle cases where Jira issues are not linked to any open GitHub issue
+      const unprocessedJiraIssues = jiraIssues.filter(
+        (issue) => !processedJiraIssues.has(issue.key)
+      );
 
-      if (!jiraIssue) {
-        // Create new Jira issue
-        console.log(`(${index + 1}/${ githubIssues.length }) Creating new Jira issue for GitHub issue #${issue.number}`);
-        await createJiraIssue(issue);
-      } else {
-        // Update existing Jira issue
-        console.log(`(${index + 1}/${githubIssues.length}) Updating existing Jira issue: ${jiraIssue.key}`);
-        await updateJiraIssue(jiraIssue, issue);
-        processedJiraIssues.add(jiraIssue.key);
-      }
+      // Uncomment to process all open Jira issues regardless of GitHub status
+      // if (unprocessedJiraIssues.length > 0) {
+        // await handleUnprocessedJiraIssues(unprocessedJiraIssues, repo);
+      // }
     }
 
-    // Check remaining Jira issues that weren't processed
-    // This is to handle cases where Jira issues are not linked to any open GitHub issue
-    const unprocessedJiraIssues = jiraIssues.filter(
-      (issue) => !processedJiraIssues.has(issue.key)
-    );
+    // Jira → GitHub sync
+    if (direction === 'jira-to-github' || direction === 'both') {
+      // Fetch recently closed Jira issues for this component and close corresponding GitHub issues
+      const closedJiraIssues = await fetchClosedJiraIssues(owner, repo, since);
+      if (closedJiraIssues.length > 0) {
+        await closeGitHubIssuesForClosedJira(closedJiraIssues);
+      }
 
-    // Uncomment to process all open Jira issues regardless of GitHub status
-    // if (unprocessedJiraIssues.length > 0) {
-      // await handleUnprocessedJiraIssues(unprocessedJiraIssues, repo);
-    // }
+      // Fetch manually created Jira issues for this component and create GitHub issues
+      const manualJiraIssues = await fetchManuallyCreatedJiraIssues(owner, repo, since);
+      if (manualJiraIssues.length > 0) {
+        await createGitHubIssuesForManualJira(manualJiraIssues);
+      }
+    }
   } catch (error) {
     errorCollector.addError('INDEX: Sync process', error);
   } finally {
@@ -190,10 +272,12 @@ const since = options.since || (() => {
   date.setDate(date.getDate() - 7);
   return date.toISOString();
 })();
+const direction = options.direction || 'both';
 
 console.log(`Syncing issues since: ${since}`);
+console.log(`Sync direction: ${direction}`);
 
 // If syncing all, loop through availableComponents
 for (const {name, owner} of availableComponents) {
-  await syncIssues(owner, name, since);
+  await syncIssues(owner, name, since, direction);
 }

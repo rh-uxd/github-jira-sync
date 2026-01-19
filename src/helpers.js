@@ -106,6 +106,16 @@ const userMappings = {
   ...enablementTeamUsers,
   ...designTeamUsers,
 };
+
+// Reverse user mapping: Jira username -> GitHub username
+// Create inverse mapping for syncing assignees from Jira back to GitHub
+export const jiraToGitHubUserMapping = {};
+for (const [githubUser, jiraUser] of Object.entries(userMappings)) {
+  // Only add mapping if Jira user doesn't already exist (to handle duplicates)
+  if (!jiraToGitHubUserMapping[jiraUser]) {
+    jiraToGitHubUserMapping[jiraUser] = githubUser;
+  }
+}
 // Map GitHub issue type to Jira issue type
 const issueTypeMappings = {
   Bug: {
@@ -158,6 +168,7 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
+  /*
   {
     name: 'AI-infra-ui-components',
     owner: 'patternfly',
@@ -170,10 +181,12 @@ export const availableComponents = [
     name: 'design-tokens',
     owner: 'patternfly',
   },
+  */
   {
     name: 'icons',
     owner: 'patternfly',
   },
+  /*
   {
     name: 'mission-control-dashboard',
     owner: 'patternfly',
@@ -274,6 +287,7 @@ export const availableComponents = [
     name: 'github-jira-sync',
     owner: 'rh-uxd'
   }
+    */
 ];
 
 export const getJiraComponent = (repoName) =>
@@ -651,6 +665,101 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
   };
 }
 
+// Extract GitHub URL from Jira description
+export function extractUpstreamUrl(jiraDescription) {
+  const match = jiraDescription?.match(/Upstream URL: (.*?)(?:\n|$)/);
+  return match ? match[1].trim() : null;
+}
+
+// Check if Jira issue has GitHub link
+export function hasUpstreamUrl(jiraDescription) {
+  return extractUpstreamUrl(jiraDescription) !== null;
+}
+
+// GitHub API wrapper functions
+export async function updateGitHubIssue(owner, repo, issueNumber, updates) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.update({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      ...updates,
+    });
+    return response.data;
+  } catch (error) {
+    errorCollector.addError(
+      `HELPERS: Error updating GitHub issue ${owner}/${repo}#${issueNumber}`,
+      error
+    );
+    throw error;
+  }
+}
+
+export async function addGitHubIssueComment(owner, repo, issueNumber, body) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      body,
+    });
+    return response.data;
+  } catch (error) {
+    errorCollector.addError(
+      `HELPERS: Error adding comment to GitHub issue ${owner}/${repo}#${issueNumber}`,
+      error
+    );
+    throw error;
+  }
+}
+
+export async function createGitHubIssue(owner, repo, issueData) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.create({
+      owner,
+      repo,
+      ...issueData,
+    });
+    return response.data;
+  } catch (error) {
+    // Provide more helpful error message for permission issues
+    if (error.status === 403) {
+      const errorMsg = `HELPERS: Permission denied creating GitHub issue in ${owner}/${repo}. ` +
+        `Ensure your GitHub token has 'repo' scope and write access to the repository. ` +
+        `Error: ${error.message}`;
+      errorCollector.addError(errorMsg, error);
+    } else {
+      errorCollector.addError(
+        `HELPERS: Error creating GitHub issue in ${owner}/${repo}`,
+        error
+      );
+    }
+    throw error;
+  }
+}
+
+export async function closeGitHubIssue(owner, repo, issueNumber) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.update({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      state: 'closed',
+    });
+    return response.data;
+  } catch (error) {
+    errorCollector.addError(
+      `HELPERS: Error closing GitHub issue ${owner}/${repo}#${issueNumber}`,
+      error
+    );
+    throw error;
+  }
+}
+
 export async function syncCommentsToJira(jiraIssueKey, githubComments) {
   try {
     // Get existing comments from Jira
@@ -723,3 +832,4 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
     );
   }
 }
+

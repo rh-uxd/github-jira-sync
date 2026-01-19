@@ -10,6 +10,7 @@ import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { errorCollector } from './index.js';
+import { syncAssigneeToGitHub, addJiraLinkToGitHub } from './syncJiraToGitHub.js';
 
 async function findChildIssues(jiraIssueKey) {
   try {
@@ -147,6 +148,10 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
         id: '5',
       };
     }
+    // Prevent syncing assignees from GitHub to Jira if Jira issue already has an assignee
+    if (jiraIssue.fields.assignee && jiraIssue.fields.assignee !== null) {
+      delete jiraIssueData.fields.assignee;
+    }
     await editJiraIssue(jiraIssue.key, jiraIssueData);
 
     addRemoteLinkToJiraIssue(jiraIssue.key, githubIssue);
@@ -177,6 +182,12 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
     // Update child issues
     const isEpic = jiraIssueData.fields.issuetype.id === '16';
     await updateChildIssues(jiraIssue.key, githubIssue, isEpic);
+
+    // Reverse sync: Sync assignee from Jira to GitHub if changed
+    await syncAssigneeToGitHub(jiraIssue, githubIssue);
+
+    // Reverse sync: Add Jira link to GitHub issue
+    await addJiraLinkToGitHub(jiraIssue.key, githubIssue);
 
     console.log(
       `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}\n`
