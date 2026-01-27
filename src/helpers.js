@@ -168,7 +168,6 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
-  /*
   {
     name: 'AI-infra-ui-components',
     owner: 'patternfly',
@@ -181,12 +180,10 @@ export const availableComponents = [
     name: 'design-tokens',
     owner: 'patternfly',
   },
-  */
   {
     name: 'icons',
     owner: 'patternfly',
   },
-  /*
   {
     name: 'mission-control-dashboard',
     owner: 'patternfly',
@@ -243,12 +240,10 @@ export const availableComponents = [
     name: 'patternfly-react-seed',
     owner: 'patternfly',
   },
-  */
   {
     name: 'pf-codemods',
     owner: 'patternfly',
   },
-  /*
   {
     name: 'pf-roadmap',
     owner: 'patternfly',
@@ -289,7 +284,6 @@ export const availableComponents = [
     name: 'github-jira-sync',
     owner: 'rh-uxd'
   }
-    */
 ];
 
 export const getJiraComponent = (repoName) =>
