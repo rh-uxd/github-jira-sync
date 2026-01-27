@@ -243,10 +243,12 @@ export const availableComponents = [
     name: 'patternfly-react-seed',
     owner: 'patternfly',
   },
+  */
   {
     name: 'pf-codemods',
     owner: 'patternfly',
   },
+  /*
   {
     name: 'pf-roadmap',
     owner: 'patternfly',
@@ -397,6 +399,7 @@ export const GET_ALL_REPO_ISSUES = `
           url
           body
           state
+          updatedAt
           issueType {
             name
           }
@@ -492,6 +495,7 @@ export const GET_ISSUE_DETAILS = `
         url
         bodyText
         state
+        updatedAt
         issueType {
           name
         }
@@ -674,6 +678,114 @@ export function extractUpstreamUrl(jiraDescription) {
 // Check if Jira issue has GitHub link
 export function hasUpstreamUrl(jiraDescription) {
   return extractUpstreamUrl(jiraDescription) !== null;
+}
+
+// Extract Jira key (PF-XXXX format) from text
+export function extractJiraKeyFromText(text) {
+  if (!text || typeof text !== 'string') {
+    return null;
+  }
+  // Match PF- followed by one or more digits
+  const match = text.match(/PF-\d+/);
+  return match ? match[0] : null;
+}
+
+// Fetch a specific Jira issue by key (works even if archived)
+export async function fetchJiraIssueByKey(issueKey) {
+  try {
+    await delay();
+    const response = await jiraClient.get(`/rest/api/2/issue/${issueKey}`, {
+      params: {
+        fields: 'key,id,description,status,assignee,issuetype,updated,summary,components,archiveddate',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    // Handle 404 (issue doesn't exist) gracefully
+    if (error.response?.status === 404) {
+      return null;
+    }
+    // Handle 403 (permission denied) gracefully
+    if (error.response?.status === 403) {
+      errorCollector.addError(
+        `HELPERS: Permission denied accessing Jira issue ${issueKey}`,
+        error
+      );
+      return null;
+    }
+    // For other errors, log and return null
+    errorCollector.addError(
+      `HELPERS: Error fetching Jira issue ${issueKey}`,
+      error
+    );
+    return null;
+  }
+}
+
+// Compare timestamps and return which is newer ('github' or 'jira')
+// Defaults to 'jira' for equal timestamps or missing data (Jira is source of truth)
+export function compareTimestamps(githubUpdatedAt, jiraUpdated) {
+  // If both are missing, default to Jira
+  if (!githubUpdatedAt && !jiraUpdated) {
+    return 'jira';
+  }
+
+  // If GitHub timestamp is missing, default to Jira
+  if (!githubUpdatedAt) {
+    return 'jira';
+  }
+
+  // If Jira timestamp is missing, default to Jira (Jira is source of truth)
+  if (!jiraUpdated) {
+    return 'jira';
+  }
+
+  try {
+    // Parse timestamps to Date objects
+    const githubDate = new Date(githubUpdatedAt);
+    const jiraDate = new Date(jiraUpdated);
+
+    // Check if dates are valid
+    if (isNaN(githubDate.getTime()) || isNaN(jiraDate.getTime())) {
+      return 'jira'; // Default to Jira if parsing fails
+    }
+
+    // Compare dates
+    const diffMs = githubDate.getTime() - jiraDate.getTime();
+    const diffSeconds = Math.abs(diffMs) / 1000;
+
+    // If difference is less than threshold (60 seconds), treat as equal and default to Jira
+    if (diffSeconds < 60) {
+      return 'jira';
+    }
+
+    // Return which is newer
+    return diffMs > 0 ? 'github' : 'jira';
+  } catch (error) {
+    // On any error, default to Jira
+    return 'jira';
+  }
+}
+
+// Determine if GitHub → Jira sync should proceed
+// Returns true only if GitHub issue was updated more recently than Jira issue
+export function shouldSyncFromGitHub(githubIssue, jiraIssue) {
+  const githubUpdatedAt = githubIssue.updatedAt;
+  const jiraUpdated = jiraIssue?.fields?.updated;
+
+  const source = compareTimestamps(githubUpdatedAt, jiraUpdated);
+  return source === 'github';
+}
+
+// Determine if Jira → GitHub sync should proceed
+// Returns true if Jira is newer or equal (Jira is source of truth)
+export function shouldSyncFromJira(githubIssue, jiraIssue) {
+  const githubUpdatedAt = githubIssue?.updatedAt;
+  const jiraUpdated = jiraIssue?.fields?.updated;
+
+  const source = compareTimestamps(githubUpdatedAt, jiraUpdated);
+  // Returns true for 'jira' (newer or equal) or if comparison defaults to Jira
+  return source === 'jira';
 }
 
 // GitHub API wrapper functions

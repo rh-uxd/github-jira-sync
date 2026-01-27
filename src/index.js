@@ -7,6 +7,7 @@ import { handleUnprocessedJiraIssues } from './handleUnprocessedJiraIssues.js';
 import {
   closeGitHubIssuesForClosedJira,
   createGitHubIssuesForManualJira,
+  checkAndHandleArchivedJiraIssue,
 } from './syncJiraToGitHub.js';
 
 export let jiraIssues = [];
@@ -126,7 +127,7 @@ const fetchJiraIssues = async (owner, repo, since) => {
     params: {
       jql: `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
       maxResults: 1000,
-      fields: 'key,id,description,status,assignee,issuetype',
+      fields: 'key,id,description,status,assignee,issuetype,updated,summary,components',
     },
   });
   const jiraIssues = response?.data?.issues || [];
@@ -142,7 +143,7 @@ const fetchClosedJiraIssues = async (owner, repo, since) => {
     params: {
       jql: `project = PF AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
       maxResults: 1000,
-      fields: 'key,id,description,status,assignee,issuetype',
+      fields: 'key,id,description,status,assignee,issuetype,updated',
     },
   });
   const closedIssues = response?.data?.issues || [];
@@ -162,7 +163,7 @@ const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
     params: {
       jql: `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
       maxResults: 1000,
-      fields: 'key,id,summary,description,status,assignee,issuetype,reporter,components',
+      fields: 'key,id,summary,description,status,assignee,issuetype,reporter,components,updated',
     },
   });
   const allIssues = response?.data?.issues || [];
@@ -194,6 +195,7 @@ async function syncIssues(owner, repo, since, direction = 'both') {
 
     // GitHub → Jira sync
     if (direction === 'github-to-jira' || direction === 'both') {
+      console.log(`\n= GitHub → Jira sync: existing GitHub issues updated since ${since} =\n`);
       // Fetch all open Jira issues for the specific repo/component, save to exported variable
       jiraIssues = await fetchJiraIssues(owner, repo, since);
 
@@ -215,12 +217,19 @@ async function syncIssues(owner, repo, since, direction = 'both') {
         const jiraIssue = await findJiraIssue(issue.url);
 
         if (!jiraIssue) {
+          // Check if the GitHub issue references an archived Jira issue
+          const archivedHandled = await checkAndHandleArchivedJiraIssue(issue);
+          if (archivedHandled) {
+            // Archived issue was handled (GitHub issue closed), skip creating duplicate
+            console.log(`(${index + 1}/${githubIssues.length}) Skipping GitHub issue #${issue.number} - referenced Jira issue is archived`);
+            continue;
+          }
           // Create new Jira issue
           console.log(`(${index + 1}/${ githubIssues.length }) Creating new Jira issue for GitHub issue #${issue.number}`);
           await createJiraIssue(issue);
         } else {
           // Update existing Jira issue
-          console.log(`(${index + 1}/${githubIssues.length}) Updating existing Jira issue: ${jiraIssue.key}`);
+          console.log(`\n(${index + 1}/${githubIssues.length}) Updating existing Jira issue: ${jiraIssue.key}`);
           await updateJiraIssue(jiraIssue, issue);
           processedJiraIssues.add(jiraIssue.key);
         }
@@ -228,11 +237,11 @@ async function syncIssues(owner, repo, since, direction = 'both') {
 
       // Check remaining Jira issues that weren't processed
       // This is to handle cases where Jira issues are not linked to any open GitHub issue
-      const unprocessedJiraIssues = jiraIssues.filter(
-        (issue) => !processedJiraIssues.has(issue.key)
-      );
-
       // Uncomment to process all open Jira issues regardless of GitHub status
+      // const unprocessedJiraIssues = jiraIssues.filter(
+      //   (issue) => !processedJiraIssues.has(issue.key)
+      // );
+
       // if (unprocessedJiraIssues.length > 0) {
         // await handleUnprocessedJiraIssues(unprocessedJiraIssues, repo);
       // }
@@ -241,12 +250,14 @@ async function syncIssues(owner, repo, since, direction = 'both') {
     // Jira → GitHub sync
     if (direction === 'jira-to-github' || direction === 'both') {
       // Fetch recently closed Jira issues for this component and close corresponding GitHub issues
+      console.log(`\n= Jira → GitHub sync: closed Jira issues since ${since} =\n`);
       const closedJiraIssues = await fetchClosedJiraIssues(owner, repo, since);
       if (closedJiraIssues.length > 0) {
         await closeGitHubIssuesForClosedJira(closedJiraIssues);
       }
 
       // Fetch manually created Jira issues for this component and create GitHub issues
+      console.log(`\n= Jira → GitHub sync: manually created Jira issues since ${since} =\n`);
       const manualJiraIssues = await fetchManuallyCreatedJiraIssues(owner, repo, since);
       if (manualJiraIssues.length > 0) {
         await createGitHubIssuesForManualJira(manualJiraIssues);

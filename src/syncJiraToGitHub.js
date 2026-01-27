@@ -11,6 +11,9 @@ import {
   editJiraIssue,
   convertMarkdownToJira,
   availableComponents,
+  shouldSyncFromJira,
+  extractJiraKeyFromText,
+  fetchJiraIssueByKey,
 } from './helpers.js';
 import { errorCollector } from './index.js';
 import j2m from 'jira2md';
@@ -49,21 +52,70 @@ function parseGitHubUrl(githubUrl) {
   };
 }
 
+// Sync title from Jira to GitHub
+export async function syncTitleToGitHub(jiraIssue, githubIssue) {
+  try {
+    // Check timestamps to determine if we should sync from Jira
+    if (!shouldSyncFromJira(githubIssue, jiraIssue)) {
+      // Don't log here - the main function will log a summary
+      return false; // Skip syncing title from Jira to GitHub
+    }
+
+    const jiraSummary = jiraIssue.fields?.summary;
+    if (!jiraSummary) {
+      return false; // No summary in Jira
+    }
+
+    const githubTitle = githubIssue.title || '';
+    
+    // Only update if titles are different
+    if (jiraSummary === githubTitle) {
+      return false; // Titles match, no update needed
+    }
+
+    const parsed = parseGitHubUrl(githubIssue.url);
+    if (!parsed) {
+      console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
+      return false;
+    }
+
+    const { owner, repo, issueNumber } = parsed;
+
+    await updateGitHubIssue(owner, repo, issueNumber, {
+      title: jiraSummary,
+    });
+
+    console.log(
+      `  ✓ Synced title "${jiraSummary}" from Jira ${jiraIssue.key} → GitHub issue #${githubIssue.number}`
+    );
+    return true;
+  } catch (error) {
+    errorCollector.addError(
+      `SYNCJIRATOGITHUB: Error syncing title from Jira ${jiraIssue.key} to GitHub`,
+      error
+    );
+    return false;
+  }
+}
+
 // Sync assignee from Jira to GitHub
 export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
   try {
+    // Check timestamps to determine if we should sync from Jira
+    if (!shouldSyncFromJira(githubIssue, jiraIssue)) {
+      // Don't log here - the main function will log a summary
+      return false; // Skip syncing assignee from Jira to GitHub
+    }
+
     if (!jiraIssue.fields.assignee || !jiraIssue.fields.assignee.name) {
-      return; // No assignee in Jira
+      return false; // No assignee in Jira
     }
 
     const jiraAssignee = jiraIssue.fields.assignee.name;
     const githubAssignee = jiraToGitHubUserMapping[jiraAssignee];
 
     if (!githubAssignee) {
-      console.log(
-        `  - No GitHub mapping found for Jira assignee ${jiraAssignee}, skipping assignee sync`
-      );
-      return;
+      return false; // No mapping found
     }
 
     // Get current GitHub assignees
@@ -71,7 +123,7 @@ export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
     const isAlreadyAssigned = currentAssignees.includes(githubAssignee);
 
     if (isAlreadyAssigned) {
-      return; // Already assigned, no change needed
+      return false; // Already assigned, no change needed
     }
 
     // Remove existing assignees and add the Jira assignee
@@ -92,17 +144,19 @@ export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
     });
 
     console.log(
-      `  - Synced assignee ${githubAssignee} from Jira ${jiraIssue.key} to GitHub issue #${githubIssue.number}`
+      `  ✓ Synced assignee ${githubAssignee} from Jira ${jiraIssue.key} → GitHub issue #${githubIssue.number}`
     );
+    return true;
   } catch (error) {
     errorCollector.addError(
       `SYNCJIRATOGITHUB: Error syncing assignee from Jira ${jiraIssue.key} to GitHub`,
       error
     );
+    return false;
   }
 }
 
-// Add Jira link to GitHub issue body and comment
+// Add Jira link to GitHub issue body
 export async function addJiraLinkToGitHub(jiraIssueKey, githubIssue) {
   try {
     const jiraLink = `https://issues.redhat.com/browse/${jiraIssueKey}`;
@@ -110,10 +164,11 @@ export async function addJiraLinkToGitHub(jiraIssueKey, githubIssue) {
     const parsed = parseGitHubUrl(githubIssue.url);
     if (!parsed) {
       console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
-      return;
+      return false;
     }
 
     const { owner, repo, issueNumber } = parsed;
+    let bodyUpdated = false;
 
     // Check if Jira link already exists in body
     const bodyHasLink = githubIssue.body?.includes(jiraIssueKey) || false;
@@ -124,31 +179,258 @@ export async function addJiraLinkToGitHub(jiraIssueKey, githubIssue) {
       await updateGitHubIssue(owner, repo, issueNumber, {
         body: updatedBody,
       });
-      console.log(`  - Added Jira link ${jiraIssueKey} to GitHub issue #${issueNumber} body`);
+      console.log(`  ✓ Added Jira link ${jiraIssueKey} to GitHub issue #${issueNumber} body`);
+      bodyUpdated = true;
     }
 
-    // Check if comment with Jira link already exists
-    await delay();
-    const { data: comments } = await octokit.rest.issues.listComments({
-      owner,
-      repo,
-      issue_number: issueNumber,
-    });
-
-    const hasJiraLinkComment = comments.some(
-      (comment) => comment.body.includes(jiraIssueKey) || comment.body.includes(jiraLink)
-    );
-
-    // Add comment if not present
-    if (!hasJiraLinkComment) {
-      await addGitHubIssueComment(owner, repo, issueNumber, jiraLinkMarkdown);
-      console.log(`  - Added Jira link ${jiraIssueKey} as comment to GitHub issue #${issueNumber}`);
-    }
+    return bodyUpdated;
   } catch (error) {
     errorCollector.addError(
       `SYNCJIRATOGITHUB: Error adding Jira link ${jiraIssueKey} to GitHub issue`,
       error
     );
+    return false;
+  }
+}
+
+// Reopen GitHub issue if corresponding Jira issue is reopened (respects timestamps)
+export async function reopenGitHubIssueIfJiraReopened(jiraIssue, githubIssue) {
+  try {
+    // Check if Jira issue is NOT closed (reopened) and GitHub issue is closed
+    const jiraStatus = jiraIssue.fields?.status?.name;
+    if (jiraStatus === 'Closed') {
+      return false; // Jira still closed, no action needed
+    }
+
+    if (githubIssue.state !== 'CLOSED') {
+      return false; // GitHub already open, no action needed
+    }
+
+    // Parse GitHub URL to get owner, repo, issueNumber
+    const parsed = parseGitHubUrl(githubIssue.url);
+    if (!parsed) {
+      console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
+      return false;
+    }
+
+    const { owner, repo, issueNumber } = parsed;
+
+    try {
+      // Get current GitHub issue state (to verify it's still closed and get updated timestamp)
+      await delay();
+      const { data: ghIssue } = await octokit.rest.issues.get({
+        owner,
+        repo,
+        issue_number: issueNumber,
+      });
+
+      if (ghIssue.state === 'open') {
+        return false; // Already open, no action needed
+      }
+
+      // Check timestamps to determine if we should sync from Jira
+      // GitHub REST API returns updated_at, convert to updatedAt for consistency
+      const githubUpdated = ghIssue.updated_at;
+      const jiraUpdated = jiraIssue.fields?.updated;
+
+      // Create a minimal GitHub issue object for comparison (using updatedAt field name)
+      const githubIssueForComparison = { updatedAt: githubUpdated };
+
+      if (!shouldSyncFromJira(githubIssueForComparison, jiraIssue)) {
+        // GitHub is newer, don't reopen (respect timestamps)
+        return false;
+      }
+
+      // Jira is newer or equal - reopen the GitHub issue
+      await updateGitHubIssue(owner, repo, issueNumber, {
+        state: 'open',
+      });
+      await addGitHubIssueComment(
+        owner,
+        repo,
+        issueNumber,
+        `Reopened via Jira sync - Jira issue ${jiraIssue.key} was reopened.`
+      );
+      console.log(
+        `  - Reopened GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraIssue.key} was reopened)`
+      );
+      return true; // Handled
+    } catch (error) {
+      if (error.status === 404) {
+        console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} not found, skipping`);
+        return false;
+      } else {
+        errorCollector.addError(
+          `SYNCJIRATOGITHUB: Error reopening GitHub issue ${owner}/${repo}#${issueNumber} for reopened Jira ${jiraIssue.key}`,
+          error
+        );
+        return false;
+      }
+    }
+  } catch (error) {
+    errorCollector.addError(
+      `SYNCJIRATOGITHUB: Error checking if Jira issue ${jiraIssue.key} is reopened for GitHub issue ${githubIssue.url}`,
+      error
+    );
+    return false; // On error, proceed with normal flow
+  }
+}
+
+// Close GitHub issue if corresponding Jira issue is closed (respects timestamps)
+export async function closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue) {
+  try {
+    // Check if Jira issue is closed and GitHub issue is open
+    const jiraStatus = jiraIssue.fields?.status?.name;
+    if (jiraStatus !== 'Closed') {
+      return false; // Jira not closed, no action needed
+    }
+
+    if (githubIssue.state !== 'OPEN') {
+      return false; // GitHub already closed, no action needed
+    }
+
+    // Parse GitHub URL to get owner, repo, issueNumber
+    const parsed = parseGitHubUrl(githubIssue.url);
+    if (!parsed) {
+      console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
+      return false;
+    }
+
+    const { owner, repo, issueNumber } = parsed;
+
+    try {
+      // Get current GitHub issue state (to verify it's still open and get updated timestamp)
+      await delay();
+      const { data: ghIssue } = await octokit.rest.issues.get({
+        owner,
+        repo,
+        issue_number: issueNumber,
+      });
+
+      if (ghIssue.state === 'closed') {
+        return false; // Already closed, no action needed
+      }
+
+      // Check timestamps to determine if we should sync from Jira
+      // GitHub REST API returns updated_at, convert to updatedAt for consistency
+      const githubUpdated = ghIssue.updated_at;
+      const jiraUpdated = jiraIssue.fields?.updated;
+
+      // Create a minimal GitHub issue object for comparison (using updatedAt field name)
+      const githubIssueForComparison = { updatedAt: githubUpdated };
+
+      if (!shouldSyncFromJira(githubIssueForComparison, jiraIssue)) {
+        // GitHub is newer, don't close (respect timestamps)
+        return false;
+      }
+
+      // Jira is newer or equal - close the GitHub issue
+      await closeGitHubIssue(owner, repo, issueNumber);
+      await addGitHubIssueComment(
+        owner,
+        repo,
+        issueNumber,
+        `Closed via Jira sync - Jira issue ${jiraIssue.key} is closed.`
+      );
+      console.log(
+        `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraIssue.key} is closed)`
+      );
+      return true; // Handled
+    } catch (error) {
+      if (error.status === 404) {
+        console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} not found, skipping`);
+        return false;
+      } else {
+        errorCollector.addError(
+          `SYNCJIRATOGITHUB: Error closing GitHub issue ${owner}/${repo}#${issueNumber} for closed Jira ${jiraIssue.key}`,
+          error
+        );
+        return false;
+      }
+    }
+  } catch (error) {
+    errorCollector.addError(
+      `SYNCJIRATOGITHUB: Error checking if Jira issue ${jiraIssue.key} is closed for GitHub issue ${githubIssue.url}`,
+      error
+    );
+    return false; // On error, proceed with normal flow
+  }
+}
+
+// Check if a GitHub issue references an archived Jira issue and handle it
+export async function checkAndHandleArchivedJiraIssue(githubIssue) {
+  try {
+    // Extract Jira key from GitHub issue body
+    const jiraKey = extractJiraKeyFromText(githubIssue.body || '');
+    if (!jiraKey) {
+      return false; // No Jira key found, no action needed
+    }
+
+    // Query the Jira issue directly by key (works even if archived)
+    const jiraIssue = await fetchJiraIssueByKey(jiraKey);
+    if (!jiraIssue) {
+      return false; // Issue doesn't exist or couldn't be fetched, proceed with normal flow
+    }
+
+    // Check if the issue is archived
+    const archivedDate = jiraIssue.fields?.archiveddate;
+    if (!archivedDate || typeof archivedDate !== 'string') {
+      return false; // Not archived, proceed with normal flow
+    }
+
+    // Issue is archived - close the GitHub issue
+    const parsed = parseGitHubUrl(githubIssue.url);
+    if (!parsed) {
+      console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
+      return false;
+    }
+
+    const { owner, repo, issueNumber } = parsed;
+
+    try {
+      // Get GitHub issue to check if it's already closed
+      await delay();
+      const { data: ghIssue } = await octokit.rest.issues.get({
+        owner,
+        repo,
+        issue_number: issueNumber,
+      });
+
+      if (ghIssue.state === 'closed') {
+        console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} is already closed (Jira ${jiraKey} is archived)`);
+        return true; // Already handled
+      }
+
+      // Close the GitHub issue
+      await closeGitHubIssue(owner, repo, issueNumber);
+      await addGitHubIssueComment(
+        owner,
+        repo,
+        issueNumber,
+        `Closed via Jira sync - Jira issue ${jiraKey} was archived.`
+      );
+      console.log(
+        `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraKey} is archived)`
+      );
+      return true; // Handled
+    } catch (error) {
+      if (error.status === 404) {
+        console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} not found, skipping`);
+        return false;
+      } else {
+        errorCollector.addError(
+          `SYNCJIRATOGITHUB: Error closing GitHub issue ${owner}/${repo}#${issueNumber} for archived Jira ${jiraKey}`,
+          error
+        );
+        return false;
+      }
+    }
+  } catch (error) {
+    errorCollector.addError(
+      `SYNCJIRATOGITHUB: Error checking archived Jira issue for GitHub issue ${githubIssue.url}`,
+      error
+    );
+    return false; // On error, proceed with normal flow
   }
 }
 
@@ -180,6 +462,21 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
 
         if (ghIssue.state === 'closed') {
           console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} is already closed`);
+          continue;
+        }
+
+        // Check timestamps to determine if we should sync from Jira
+        // GitHub REST API returns updated_at, convert to updatedAt for consistency
+        const githubUpdated = ghIssue.updated_at;
+        const jiraUpdated = jiraIssue.fields?.updated;
+
+        // Create a minimal GitHub issue object for comparison (using updatedAt field name)
+        const githubIssueForComparison = { updatedAt: githubUpdated };
+
+        if (!shouldSyncFromJira(githubIssueForComparison, jiraIssue)) {
+          console.log(
+            `  - Skipping close: GitHub issue ${owner}/${repo}#${issueNumber} was updated more recently (${githubUpdated}) than Jira issue ${jiraIssue.key} (${jiraUpdated})`
+          );
           continue;
         }
 
