@@ -332,6 +332,12 @@ export async function closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue) {
         issueNumber,
         `Closed via Jira sync - Jira issue ${jiraIssue.key} is closed.`
       );
+      // Add Jira link to GitHub issue body if not already present
+      const githubIssueForLink = {
+        url: githubIssue.url,
+        body: ghIssue.body || '',
+      };
+      await addJiraLinkToGitHub(jiraIssue.key, githubIssueForLink);
       console.log(
         `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraIssue.key} is closed)`
       );
@@ -409,6 +415,12 @@ export async function checkAndHandleArchivedJiraIssue(githubIssue) {
         issueNumber,
         `Closed via Jira sync - Jira issue ${jiraKey} was archived.`
       );
+      // Add Jira link to GitHub issue body if not already present
+      const githubIssueForLink = {
+        url: githubIssue.url,
+        body: ghIssue.body || '',
+      };
+      await addJiraLinkToGitHub(jiraKey, githubIssueForLink);
       console.log(
         `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraKey} is archived)`
       );
@@ -488,6 +500,12 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
           issueNumber,
           `Closed via Jira sync - Jira issue ${jiraIssue.key} was closed.`
         );
+        // Add Jira link to GitHub issue body if not already present
+        const githubIssueForLink = {
+          url: githubUrl,
+          body: ghIssue.body || '',
+        };
+        await addJiraLinkToGitHub(jiraIssue.key, githubIssueForLink);
         console.log(
           `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraIssue.key} was closed)`
         );
