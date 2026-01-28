@@ -106,6 +106,16 @@ const userMappings = {
   ...enablementTeamUsers,
   ...designTeamUsers,
 };
+
+// Reverse user mapping: Jira username -> GitHub username
+// Create inverse mapping for syncing assignees from Jira back to GitHub
+export const jiraToGitHubUserMapping = {};
+for (const [githubUser, jiraUser] of Object.entries(userMappings)) {
+  // Only add mapping if Jira user doesn't already exist (to handle duplicates)
+  if (!jiraToGitHubUserMapping[jiraUser]) {
+    jiraToGitHubUserMapping[jiraUser] = githubUser;
+  }
+}
 // Map GitHub issue type to Jira issue type
 const issueTypeMappings = {
   Bug: {
@@ -383,6 +393,7 @@ export const GET_ALL_REPO_ISSUES = `
           url
           body
           state
+          updatedAt
           issueType {
             name
           }
@@ -478,6 +489,7 @@ export const GET_ISSUE_DETAILS = `
         url
         bodyText
         state
+        updatedAt
         issueType {
           name
         }
@@ -651,6 +663,209 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
   };
 }
 
+// Extract GitHub URL from Jira description
+export function extractUpstreamUrl(jiraDescription) {
+  const match = jiraDescription?.match(/Upstream URL: (.*?)(?:\n|$)/);
+  return match ? match[1].trim() : null;
+}
+
+// Check if Jira issue has GitHub link
+export function hasUpstreamUrl(jiraDescription) {
+  return extractUpstreamUrl(jiraDescription) !== null;
+}
+
+// Extract Jira key (PF-XXXX format) from text
+export function extractJiraKeyFromText(text) {
+  if (!text || typeof text !== 'string') {
+    return null;
+  }
+  // Match PF- followed by one or more digits
+  const match = text.match(/PF-\d+/);
+  return match ? match[0] : null;
+}
+
+// Fetch a specific Jira issue by key (works even if archived)
+export async function fetchJiraIssueByKey(issueKey) {
+  try {
+    await delay();
+    const response = await jiraClient.get(`/rest/api/2/issue/${issueKey}`, {
+      params: {
+        fields: 'key,id,description,status,assignee,issuetype,updated,summary,components,archiveddate',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    // Handle 404 (issue doesn't exist) gracefully
+    if (error.response?.status === 404) {
+      return null;
+    }
+    // Handle 403 (permission denied) gracefully
+    if (error.response?.status === 403) {
+      errorCollector.addError(
+        `HELPERS: Permission denied accessing Jira issue ${issueKey}`,
+        error
+      );
+      return null;
+    }
+    // For other errors, log and return null
+    errorCollector.addError(
+      `HELPERS: Error fetching Jira issue ${issueKey}`,
+      error
+    );
+    return null;
+  }
+}
+
+// Compare timestamps and return which is newer ('github' or 'jira')
+// Defaults to 'jira' for equal timestamps or missing data (Jira is source of truth)
+export function compareTimestamps(githubUpdatedAt, jiraUpdated) {
+  // If both are missing, default to Jira
+  if (!githubUpdatedAt && !jiraUpdated) {
+    return 'jira';
+  }
+
+  // If GitHub timestamp is missing, default to Jira
+  if (!githubUpdatedAt) {
+    return 'jira';
+  }
+
+  // If Jira timestamp is missing, default to Jira (Jira is source of truth)
+  if (!jiraUpdated) {
+    return 'jira';
+  }
+
+  try {
+    // Parse timestamps to Date objects
+    const githubDate = new Date(githubUpdatedAt);
+    const jiraDate = new Date(jiraUpdated);
+
+    // Check if dates are valid
+    if (isNaN(githubDate.getTime()) || isNaN(jiraDate.getTime())) {
+      return 'jira'; // Default to Jira if parsing fails
+    }
+
+    // Compare dates
+    const diffMs = githubDate.getTime() - jiraDate.getTime();
+    const diffSeconds = Math.abs(diffMs) / 1000;
+
+    // If difference is less than threshold (60 seconds), treat as equal and default to Jira
+    if (diffSeconds < 60) {
+      return 'jira';
+    }
+
+    // Return which is newer
+    return diffMs > 0 ? 'github' : 'jira';
+  } catch (error) {
+    // On any error, default to Jira
+    return 'jira';
+  }
+}
+
+// Determine if GitHub → Jira sync should proceed
+// Returns true only if GitHub issue was updated more recently than Jira issue
+export function shouldSyncFromGitHub(githubIssue, jiraIssue) {
+  const githubUpdatedAt = githubIssue.updatedAt;
+  const jiraUpdated = jiraIssue?.fields?.updated;
+
+  const source = compareTimestamps(githubUpdatedAt, jiraUpdated);
+  return source === 'github';
+}
+
+// Determine if Jira → GitHub sync should proceed
+// Returns true if Jira is newer or equal (Jira is source of truth)
+export function shouldSyncFromJira(githubIssue, jiraIssue) {
+  const githubUpdatedAt = githubIssue?.updatedAt;
+  const jiraUpdated = jiraIssue?.fields?.updated;
+
+  const source = compareTimestamps(githubUpdatedAt, jiraUpdated);
+  // Returns true for 'jira' (newer or equal) or if comparison defaults to Jira
+  return source === 'jira';
+}
+
+// GitHub API wrapper functions
+export async function updateGitHubIssue(owner, repo, issueNumber, updates) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.update({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      ...updates,
+    });
+    return response.data;
+  } catch (error) {
+    errorCollector.addError(
+      `HELPERS: Error updating GitHub issue ${owner}/${repo}#${issueNumber}`,
+      error
+    );
+    throw error;
+  }
+}
+
+export async function addGitHubIssueComment(owner, repo, issueNumber, body) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      body,
+    });
+    return response.data;
+  } catch (error) {
+    errorCollector.addError(
+      `HELPERS: Error adding comment to GitHub issue ${owner}/${repo}#${issueNumber}`,
+      error
+    );
+    throw error;
+  }
+}
+
+export async function createGitHubIssue(owner, repo, issueData) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.create({
+      owner,
+      repo,
+      ...issueData,
+    });
+    return response.data;
+  } catch (error) {
+    // Provide more helpful error message for permission issues
+    if (error.status === 403) {
+      const errorMsg = `HELPERS: Permission denied creating GitHub issue in ${owner}/${repo}. ` +
+        `Ensure your GitHub token has 'repo' scope and write access to the repository. ` +
+        `Error: ${error.message}`;
+      errorCollector.addError(errorMsg, error);
+    } else {
+      errorCollector.addError(
+        `HELPERS: Error creating GitHub issue in ${owner}/${repo}`,
+        error
+      );
+    }
+    throw error;
+  }
+}
+
+export async function closeGitHubIssue(owner, repo, issueNumber) {
+  await delay();
+  try {
+    const response = await octokit.rest.issues.update({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      state: 'closed',
+    });
+    return response.data;
+  } catch (error) {
+    errorCollector.addError(
+      `HELPERS: Error closing GitHub issue ${owner}/${repo}#${issueNumber}`,
+      error
+    );
+    throw error;
+  }
+}
+
 export async function syncCommentsToJira(jiraIssueKey, githubComments) {
   try {
     // Get existing comments from Jira
@@ -723,3 +938,4 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
     );
   }
 }
+

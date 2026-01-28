@@ -5,11 +5,13 @@ import {
   delay,
   syncCommentsToJira,
   addRemoteLinkToJiraIssue,
+  shouldSyncFromGitHub,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { errorCollector } from './index.js';
+import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened } from './syncJiraToGitHub.js';
 
 async function findChildIssues(jiraIssueKey) {
   try {
@@ -17,7 +19,7 @@ async function findChildIssues(jiraIssueKey) {
     const response = await jiraClient.get('/rest/api/2/search', {
       params: {
         jql: `parent = ${jiraIssueKey}`,
-        fields: 'key,description',
+        fields: 'key,description,updated',
       },
     });
     return response.data.issues;
@@ -139,48 +141,155 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
 
 export async function updateJiraIssue(jiraIssue, githubIssue) {
   try {
-    const jiraIssueData = buildJiraIssueData(githubIssue, true);
-    // If issue is a sub-task, keep issue type as sub-task
-    // Avoids next GH sync resetting sub-task issuetype
-    if (jiraIssue.fields.issuetype.id === '5') {
-      jiraIssueData.fields.issuetype = {
-        id: '5',
-      };
+    // Track what was synced for logging
+    const syncSummary = {
+      githubToJira: false,
+      jiraToGitHub: {
+        title: false,
+        assignee: false,
+        link: false,
+        closed: false,
+        reopened: false,
+      },
+    };
+
+    // Check if Jira is closed and close GitHub issue early (before any operations that update GitHub timestamp)
+    const closedHandled = await closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue);
+    if (closedHandled) {
+      syncSummary.jiraToGitHub.closed = true;
     }
-    await editJiraIssue(jiraIssue.key, jiraIssueData);
-
-    addRemoteLinkToJiraIssue(jiraIssue.key, githubIssue);
-
-    // Sync comments
-    if (githubIssue.comments.totalCount > 0) {
-      await syncCommentsToJira(jiraIssue.key, githubIssue.comments);
+    
+    // Check if Jira is reopened and reopen GitHub issue early (before any operations that update GitHub timestamp)
+    const reopenedHandled = await reopenGitHubIssueIfJiraReopened(jiraIssue, githubIssue);
+    if (reopenedHandled) {
+      syncSummary.jiraToGitHub.reopened = true;
     }
 
-    // Check if Jira issue is closed, needs to be reopened
-    if (githubIssue.state === 'OPEN' && jiraIssue.fields.status.name === 'Closed') {
+    // Check timestamps to determine if we should sync from GitHub to Jira
+    const shouldSyncGitHubToJira = shouldSyncFromGitHub(githubIssue, jiraIssue);
+    if (!shouldSyncGitHubToJira) {
+      const githubUpdated = githubIssue.updatedAt || 'unknown';
+      const jiraUpdated = jiraIssue.fields?.updated || 'unknown';
       console.log(
-        ` - GitHub issue #${githubIssue.number} is open but Jira issue ${jiraIssue.key} is closed, transitioning to New`
+        `  - Skipping GitHub → Jira sync: Jira issue ${jiraIssue.key} was updated more recently (${jiraUpdated}) than GitHub issue #${githubIssue.number} (${githubUpdated}). Jira is source of truth.`
       );
-      await delay();
-      await transitionJiraIssue(jiraIssue.key, 'New');
-    }
+    } else {
+      // GitHub is newer, sync GitHub → Jira
+      syncSummary.githubToJira = true;
+      
+      const jiraIssueData = buildJiraIssueData(githubIssue, true);
+      // If issue is a sub-task, keep issue type as sub-task
+      // Avoids next GH sync resetting sub-task issuetype
+      if (jiraIssue.fields.issuetype.id === '5') {
+        jiraIssueData.fields.issuetype = {
+          id: '5',
+        };
+      }
+      // Prevent syncing assignees from GitHub to Jira if Jira issue already has an assignee
+      const hadAssignee = jiraIssue.fields.assignee && jiraIssue.fields.assignee !== null;
+      if (hadAssignee) {
+        delete jiraIssueData.fields.assignee;
+      }
+      
+      // Check what changed (compare meaningful fields)
+      const titleChanged = jiraIssue.fields.summary !== githubIssue.title;
+      const hadGitHubAssignee = githubIssue.assignees?.nodes?.length > 0;
+      const assigneeChanged = !hadAssignee && hadGitHubAssignee;
+      
+      await editJiraIssue(jiraIssue.key, jiraIssueData);
 
-    // Check if GitHub issue is closed, needs to close Jira issue
-    if (githubIssue.state === 'CLOSED' && jiraIssue.fields.status.name !== 'Closed') {
+      // Log what was synced
+      const changes = [];
+      if (titleChanged) changes.push('title');
+      changes.push('description'); // Description always syncs (includes metadata)
+      if (assigneeChanged) changes.push('assignee');
+      
       console.log(
-        ` - GitHub issue #${githubIssue.number} is closed but Jira issue ${jiraIssue.key} is open, transitioning to Done`
+        `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
       );
-      await delay();
-      await transitionJiraIssue(jiraIssue.key, 'Closed');
+
+      addRemoteLinkToJiraIssue(jiraIssue.key, githubIssue);
+
+      // Sync comments
+      if (githubIssue.comments.totalCount > 0) {
+        await syncCommentsToJira(jiraIssue.key, githubIssue.comments);
+      }
+
+      // Check if Jira issue is closed, needs to be reopened
+      if (githubIssue.state === 'OPEN' && jiraIssue.fields.status.name === 'Closed') {
+        console.log(
+          `  - GitHub issue #${githubIssue.number} is open but Jira issue ${jiraIssue.key} is closed, transitioning to New`
+        );
+        await delay();
+        await transitionJiraIssue(jiraIssue.key, 'New');
+      }
+
+      // Check if GitHub issue is closed, needs to close Jira issue
+      if (githubIssue.state === 'CLOSED' && jiraIssue.fields.status.name !== 'Closed') {
+        console.log(
+          `  - GitHub issue #${githubIssue.number} is closed but Jira issue ${jiraIssue.key} is open, transitioning to Done`
+        );
+        await delay();
+        await transitionJiraIssue(jiraIssue.key, 'Closed');
+      }
+
+      // Update child issues
+      const isEpic = jiraIssueData.fields.issuetype.id === '16';
+      await updateChildIssues(jiraIssue.key, githubIssue, isEpic);
     }
 
-    // Update child issues
-    const isEpic = jiraIssueData.fields.issuetype.id === '16';
-    await updateChildIssues(jiraIssue.key, githubIssue, isEpic);
+    // Reverse sync: Always attempt to sync from Jira to GitHub
+    // These functions check timestamps internally and will skip if GitHub is newer
+    const titleResult = await syncTitleToGitHub(jiraIssue, githubIssue);
+    if (titleResult) syncSummary.jiraToGitHub.title = true;
+    
+    const assigneeResult = await syncAssigneeToGitHub(jiraIssue, githubIssue);
+    if (assigneeResult) syncSummary.jiraToGitHub.assignee = true;
+    
+    const linkResult = await addJiraLinkToGitHub(jiraIssue.key, githubIssue);
+    if (linkResult) syncSummary.jiraToGitHub.link = true;
 
-    console.log(
-      `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}\n`
-    );
+    // Log summary
+    const summaryParts = [];
+    if (syncSummary.githubToJira) {
+      summaryParts.push('GitHub → Jira');
+    }
+    const jiraToGitHubChanges = Object.entries(syncSummary.jiraToGitHub)
+      .filter(([_, changed]) => changed)
+      .map(([field, _]) => field);
+    if (jiraToGitHubChanges.length > 0) {
+      summaryParts.push(`Jira → GitHub (${jiraToGitHubChanges.join(', ')})`);
+    }
+    
+    // If GitHub issue was closed or reopened, always include it in summary even if no other changes
+    if (syncSummary.jiraToGitHub.closed && jiraToGitHubChanges.length === 0) {
+      summaryParts.push(`Jira → GitHub (closed)`);
+    }
+    if (syncSummary.jiraToGitHub.reopened && jiraToGitHubChanges.length === 0 && !syncSummary.jiraToGitHub.closed) {
+      summaryParts.push(`Jira → GitHub (reopened)`);
+    }
+    
+    if (summaryParts.length > 0) {
+      console.log(
+        `  ✓ Sync completed: ${summaryParts.join(' | ')}`
+      );
+      console.log(
+        `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}\n`
+      );
+    } else if (syncSummary.githubToJira) {
+      // GitHub → Jira synced, but Jira → GitHub skipped (GitHub is newer)
+      console.log(
+        `  ✓ Sync completed: GitHub → Jira (Jira → GitHub skipped: GitHub is newer)`
+      );
+      console.log(
+        `Updated Jira issue ${jiraIssue.key} for GitHub issue #${githubIssue.number}\n`
+      );
+    } else {
+      // No sync in either direction
+      console.log(
+        `  - No sync needed: Both issues are up to date`
+      );
+    }
   } catch (error) {
     errorCollector.addError(
       `UPDATEJIRA: Error updating Jira issue ${jiraIssue.key} (GH #${githubIssue.number})`,

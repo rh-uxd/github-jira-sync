@@ -1,6 +1,6 @@
-# PatternFly GitHub to Jira Issue Sync
+# PatternFly GitHub ↔ Jira Issue Sync
 
-This Node.js application automatically synchronizes GitHub issues across all PatternFly repositories to a centralized Jira instance. It creates new Jira issues for GitHub issues that don't exist in Jira, updates existing Jira issues when their corresponding GitHub issues are modified, and maintains comprehensive synchronization including comments, child issues, and user assignments.
+This Node.js application automatically synchronizes issues between GitHub and Jira in both directions. It keeps GitHub issues and Jira issues in sync across all PatternFly repositories, ensuring that changes in either system are reflected in the other. The sync handles issue creation, updates, comments, assignments, and status changes while respecting which system was updated most recently.
 
 ## Prerequisites
 
@@ -31,6 +31,41 @@ This Node.js application automatically synchronizes GitHub issues across all Pat
    JIRA_PAT=your_jira_personal_access_token
    ```
    
+## How Sync Works
+
+The sync tool operates in **two directions** with **timestamp-based conflict resolution** to ensure the most recently updated system takes priority:
+
+### Sync Direction & Priority
+
+**GitHub → Jira Sync** (Primary direction):
+- Creates new Jira issues for GitHub issues that don't exist in Jira
+- Syncs issue titles, descriptions, labels, and comments from GitHub to Jira
+- Updates issue status (open/closed) based on GitHub state
+- **Note**: Assignees are only synced from GitHub to Jira if the Jira issue doesn't already have an assignee
+
+**Jira → GitHub Sync** (Reverse direction):
+- Syncs assignees from Jira to GitHub (when Jira was updated more recently)
+- Syncs issue titles from Jira to GitHub (when Jira was updated more recently)
+- Adds Jira issue links to GitHub issue descriptions and comments
+- Closes GitHub issues when their corresponding Jira issues are closed
+
+### Conflict Resolution
+
+The sync uses a **"last updated wins"** strategy:
+- If GitHub was updated more recently → GitHub changes sync to Jira
+- If Jira was updated more recently → Jira changes sync to GitHub
+- If timestamps are equal or missing → Jira is treated as the source of truth
+
+This ensures that manual updates in either system are preserved and synced correctly.
+
+### Sync Order
+
+For each repository, the sync processes in this order:
+1. **GitHub → Jira**: All GitHub issues updated since the specified date
+2. **Jira → GitHub**: 
+   - Recently closed Jira issues (to close corresponding GitHub issues)
+   - Manually created Jira issues (to create corresponding GitHub issues)
+
 ## Usage
 
 Run the sync with default date (hardcoded fallback is 7 days prior to current date):
@@ -43,6 +78,13 @@ Run the sync with a custom date:
 npm run sync --since 2025-01-01T00:00:00Z
 ```
 
+Run sync in a specific direction:
+```bash
+npm run sync --direction github-to-jira    # Only sync GitHub → Jira
+npm run sync --direction jira-to-github    # Only sync Jira → GitHub
+npm run sync --direction both              # Sync both directions (default)
+```
+
 Or use the convenience script:
 ```bash
 npm run sync:since 01-01-2025
@@ -50,20 +92,14 @@ npm run sync:since 01-01-2025
 
 **Date Format**: Use ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ) for the `--since` parameter, or use MM-DD-YYYY which will be converted to ISO 8601 format.
 
-The application will automatically process all 27 PatternFly repositories:
-1. For each repository, fetch all open GitHub issues updated since the specified date
-2. For each GitHub issue:
-   - Check if it already exists in Jira (by matching GitHub URL in Jira description)
-   - Create a new Jira issue if it doesn't exist
-   - Update the existing Jira issue if it does exist
-   - Sync all GitHub comments to Jira
-   - Handle parent/child issue relationships
-   - Keep issue states synchronized between GitHub and Jira
+**Direction Options**: `github-to-jira`, `jira-to-github`, or `both` (default)
 
 ## Features
 
 ### Core Synchronization
+- **Bidirectional Sync**: Automatically syncs changes in both GitHub → Jira and Jira → GitHub directions
 - **Multi-Repository Processing**: Automatically syncs all 27 PatternFly repositories in a single run
+- **Timestamp-Based Conflict Resolution**: Uses "last updated wins" strategy to prevent overwriting recent changes
 - **State Sync**: Keeps GitHub and Jira issue states synchronized (open/closed)
 - **Smart Issue Matching**: Links GitHub issues to Jira issues using GitHub URL references in Jira descriptions
 - **Duplicate Prevention**: Detects and handles cases where multiple Jira issues point to the same GitHub issue
@@ -82,9 +118,11 @@ The application will automatically process all 27 PatternFly repositories:
 
 ### Team Integration
 - **User Mapping**: Maps GitHub usernames to Jira usernames for Platform, Enablement, and Design teams
+- **Assignee Sync**: Bidirectional assignee syncing (respects existing assignees to prevent overwrites)
 - **Issue Type Mapping**: Intelligently maps GitHub issue types (Bug, Epic, Task, Feature, etc.) to appropriate Jira issue types
 - **Component Assignment**: Automatically assigns Jira components based on repository names
 - **Remote Linking**: Creates remote links between GitHub issues and Jira issues
+- **Manual Jira Issue Creation**: Automatically creates GitHub issues for manually created Jira issues (Epic, Story, Task, Bug, Sub-task only)
 
 ### Reliability & Performance
 - **Rate Limiting Protection**: Built-in delays and retry logic to avoid API rate limits
