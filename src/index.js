@@ -188,7 +188,7 @@ const fetchGitHubIssues = async (owner, repo, since) => {
 };
 
 async function syncIssues(owner, repo, since, direction = 'both') {
-  console.log(`\n=== START Syncing issues for repo ${ owner }/${ repo } updated since ${since} (direction: ${direction}) ===\n`);
+  console.log(`\n\n=== START Syncing issues for repo ${ owner }/${ repo } updated since ${since} (direction: ${direction}) ===\n\n`);
   try {
     // Clear any previous errors
     // errorCollector.clear();
@@ -273,6 +273,7 @@ async function syncIssues(owner, repo, since, direction = 'both') {
       console.log(`\n=== END ${repo.toUpperCase()} ERRORS ===\n`);
       errorCollector.clear();
     }
+    console.log(`\n\n=== COMPLETED Syncing issues for repo ${ owner }/${ repo } ===\n\n`);
   }
 }
 
