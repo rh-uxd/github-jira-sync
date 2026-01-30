@@ -1,5 +1,5 @@
 import {
-  octokit,
+  getOctokitForOwner,
   delay,
   jiraToGitHubUserMapping,
   extractUpstreamUrl,
@@ -127,19 +127,27 @@ export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
     }
 
     // Remove existing assignees and add the Jira assignee
-    if (currentAssignees.length > 0) {
-      await octokit.rest.issues.removeAssignees({
-        owner: parseGitHubUrl(githubIssue.url).owner,
-        repo: parseGitHubUrl(githubIssue.url).repo,
-        issue_number: parseGitHubUrl(githubIssue.url).issueNumber,
-        assignees: currentAssignees,
-      });
+    const parsed = parseGitHubUrl(githubIssue.url);
+    if (!parsed) {
+      console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
+      return false;
     }
+    const { owner, repo, issueNumber } = parsed;
+    const octokitInstance = getOctokitForOwner(owner);
 
-    await octokit.rest.issues.addAssignees({
-      owner: parseGitHubUrl(githubIssue.url).owner,
-      repo: parseGitHubUrl(githubIssue.url).repo,
-      issue_number: parseGitHubUrl(githubIssue.url).issueNumber,
+    // if (currentAssignees.length > 0) {
+    //   await octokitInstance.rest.issues.removeAssignees({
+    //     owner,
+    //     repo,
+    //     issue_number: issueNumber,
+    //     assignees: currentAssignees,
+    //   });
+    // }
+
+    await octokitInstance.rest.issues.addAssignees({
+      owner,
+      repo,
+      issue_number: issueNumber,
       assignees: [githubAssignee],
     });
 
@@ -218,7 +226,8 @@ export async function reopenGitHubIssueIfJiraReopened(jiraIssue, githubIssue) {
     try {
       // Get current GitHub issue state (to verify it's still closed and get updated timestamp)
       await delay();
-      const { data: ghIssue } = await octokit.rest.issues.get({
+      const octokitInstance = getOctokitForOwner(owner);
+      const { data: ghIssue } = await octokitInstance.rest.issues.get({
         owner,
         repo,
         issue_number: issueNumber,
@@ -301,7 +310,8 @@ export async function closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue) {
     try {
       // Get current GitHub issue state (to verify it's still open and get updated timestamp)
       await delay();
-      const { data: ghIssue } = await octokit.rest.issues.get({
+      const octokitInstance = getOctokitForOwner(owner);
+      const { data: ghIssue } = await octokitInstance.rest.issues.get({
         owner,
         repo,
         issue_number: issueNumber,
@@ -396,7 +406,8 @@ export async function checkAndHandleArchivedJiraIssue(githubIssue) {
     try {
       // Get GitHub issue to check if it's already closed
       await delay();
-      const { data: ghIssue } = await octokit.rest.issues.get({
+      const octokitInstance = getOctokitForOwner(owner);
+      const { data: ghIssue } = await octokitInstance.rest.issues.get({
         owner,
         repo,
         issue_number: issueNumber,
@@ -466,7 +477,8 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
       try {
         // Get GitHub issue to check if it's already closed
         await delay();
-        const { data: ghIssue } = await octokit.rest.issues.get({
+        const octokitInstance = getOctokitForOwner(owner);
+        const { data: ghIssue } = await octokitInstance.rest.issues.get({
           owner,
           repo,
           issue_number: issueNumber,

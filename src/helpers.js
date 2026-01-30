@@ -4,10 +4,48 @@ import { errorCollector } from './index.js';
 import j2m from 'jira2md';
 
 // Initialize Octokit with GraphQL support
+// @deprecated Use getOctokitForOwner() instead for multi-org support
 export const octokit = new Octokit({
   auth: process.env.GH_TOKEN,
   baseUrl: 'https://api.github.com',
 });
+
+// Cache for Octokit instances by owner
+const octokitInstances = new Map();
+
+/**
+ * Get an Octokit instance for the specified owner
+ * @param {string} owner - Repository owner (e.g., 'patternfly', 'rh-uxd')
+ * @returns {Octokit} Cached Octokit instance with appropriate token
+ */
+export function getOctokitForOwner(owner) {
+  // Return cached instance if available
+  if (octokitInstances.has(owner)) {
+    return octokitInstances.get(owner);
+  }
+
+  // Determine which token to use based on owner
+  let token;
+  if (owner === 'rh-uxd') {
+    token = process.env.GH_JIRA_SYNC_RHUXD_PAT;
+  } else {
+    // Default to patternfly token for 'patternfly' and any other owners
+    token = process.env.GH_TOKEN;
+  }
+
+  if (!token) {
+    throw new Error(`Missing GitHub token for owner: ${owner}`);
+  }
+
+  // Create and cache new instance
+  const instance = new Octokit({
+    auth: token,
+    baseUrl: 'https://api.github.com',
+  });
+
+  octokitInstances.set(owner, instance);
+  return instance;
+}
 
 // Initialize Jira client
 export const jiraClient = axios.create({
@@ -283,6 +321,10 @@ export const availableComponents = [
   {
     name: 'github-jira-sync',
     owner: 'rh-uxd'
+  },
+  {
+    name: 'jira-weekly-report',
+    owner: 'rh-uxd'
   }
 ];
 
@@ -354,9 +396,12 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
 };
 
 // Helper function to execute GraphQL queries
-export async function executeGraphQLQuery(query, variables) {
+export async function executeGraphQLQuery(query, variables, owner = null) {
   try {
-    const response = await octokit.graphql(query, variables);
+    // Extract owner from variables if not provided directly
+    const ownerToUse = owner || variables?.owner || 'patternfly';
+    const octokitInstance = getOctokitForOwner(ownerToUse);
+    const response = await octokitInstance.graphql(query, variables);
     return response;
   } catch (error) {
     errorCollector.addError('HELPERS: GraphQL query execution', error);
@@ -587,7 +632,7 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
         repo,
         issuesCursor: cursor,
         since,
-      });
+      }, ghOwner);
 
       // Validate response structure
       if (!response?.repository?.issues) {
@@ -786,7 +831,8 @@ export function shouldSyncFromJira(githubIssue, jiraIssue) {
 export async function updateGitHubIssue(owner, repo, issueNumber, updates) {
   await delay();
   try {
-    const response = await octokit.rest.issues.update({
+    const octokitInstance = getOctokitForOwner(owner);
+    const response = await octokitInstance.rest.issues.update({
       owner,
       repo,
       issue_number: issueNumber,
@@ -805,7 +851,8 @@ export async function updateGitHubIssue(owner, repo, issueNumber, updates) {
 export async function addGitHubIssueComment(owner, repo, issueNumber, body) {
   await delay();
   try {
-    const response = await octokit.rest.issues.createComment({
+    const octokitInstance = getOctokitForOwner(owner);
+    const response = await octokitInstance.rest.issues.createComment({
       owner,
       repo,
       issue_number: issueNumber,
@@ -824,7 +871,8 @@ export async function addGitHubIssueComment(owner, repo, issueNumber, body) {
 export async function createGitHubIssue(owner, repo, issueData) {
   await delay();
   try {
-    const response = await octokit.rest.issues.create({
+    const octokitInstance = getOctokitForOwner(owner);
+    const response = await octokitInstance.rest.issues.create({
       owner,
       repo,
       ...issueData,
@@ -850,7 +898,8 @@ export async function createGitHubIssue(owner, repo, issueData) {
 export async function closeGitHubIssue(owner, repo, issueNumber) {
   await delay();
   try {
-    const response = await octokit.rest.issues.update({
+    const octokitInstance = getOctokitForOwner(owner);
+    const response = await octokitInstance.rest.issues.update({
       owner,
       repo,
       issue_number: issueNumber,

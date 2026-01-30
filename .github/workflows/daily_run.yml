@@ -39,7 +39,11 @@ jobs:
       # Step 4: Run GitHub-Jira sync
       - name: Execute GitHub-Jira Sync
         env:
+          # PF-org token
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          # RH-UXD org token
+          GH_JIRA_SYNC_RHUXD_PAT: ${{ secrets.GH_JIRA_SYNC_RHUXD_PAT }}
+          # Jira token
           JIRA_PAT: ${{ secrets.JIRA_PAT }}
         run: |
           if [[ "${{ github.event.inputs.since_date }}" != "" ]]; then
