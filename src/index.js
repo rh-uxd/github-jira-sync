@@ -8,6 +8,7 @@ import {
   closeGitHubIssuesForClosedJira,
   createGitHubIssuesForManualJira,
   checkAndHandleArchivedJiraIssue,
+  syncUpdatedJiraIssuesToGitHub,
 } from './syncJiraToGitHub.js';
 
 export let jiraIssues = [];
@@ -193,6 +194,9 @@ async function syncIssues(owner, repo, since, direction = 'both') {
     // Clear any previous errors
     // errorCollector.clear();
 
+    // Keep track of which Jira issues we've processed (hoisted so Jira→GitHub block can use it)
+    const processedJiraIssues = new Set();
+
     // GitHub → Jira sync
     if (direction === 'github-to-jira' || direction === 'both') {
       console.log(`\n= GitHub → Jira sync: existing GitHub issues updated since ${since} =\n`);
@@ -201,9 +205,6 @@ async function syncIssues(owner, repo, since, direction = 'both') {
 
       // Fetch all updated GitHub issues from GraphQL response
       const githubIssues = await fetchGitHubIssues(owner, repo, since);
-
-      // Keep track of which Jira issues we've processed
-      const processedJiraIssues = new Set();
 
       // Process GitHub issues
       for (const [index, issue] of githubIssues.entries()) {
@@ -249,6 +250,23 @@ async function syncIssues(owner, repo, since, direction = 'both') {
 
     // Jira → GitHub sync
     if (direction === 'jira-to-github' || direction === 'both') {
+      // Ensure jiraIssues are available (may not have been fetched if direction is 'jira-to-github')
+      if (jiraIssues.length === 0) {
+        jiraIssues = await fetchJiraIssues(owner, repo, since);
+      }
+
+      // Sync recently-updated Jira issues that weren't already processed in the GitHub-driven loop
+      console.log(`\n= Jira → GitHub sync: recently-updated Jira issues since ${since} =\n`);
+      const sinceDate = new Date(since);
+      const recentlyUpdatedJiraIssues = jiraIssues.filter(
+        (issue) => new Date(issue.fields.updated) >= sinceDate && !processedJiraIssues.has(issue.key)
+      );
+      if (recentlyUpdatedJiraIssues.length > 0) {
+        await syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner);
+      } else {
+        console.log(`  No recently-updated Jira issues to sync.`);
+      }
+
       // Fetch recently closed Jira issues for this component and close corresponding GitHub issues
       console.log(`\n= Jira → GitHub sync: closed Jira issues since ${since} =\n`);
       const closedJiraIssues = await fetchClosedJiraIssues(owner, repo, since);
