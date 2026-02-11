@@ -14,6 +14,8 @@ import {
   shouldSyncFromJira,
   extractJiraKeyFromText,
   fetchJiraIssueByKey,
+  executeGraphQLQuery,
+  GET_ISSUE_DETAILS,
 } from './helpers.js';
 import { errorCollector } from './index.js';
 import j2m from 'jira2md';
@@ -101,11 +103,11 @@ export async function syncTitleToGitHub(jiraIssue, githubIssue) {
 // Sync assignee from Jira to GitHub
 export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
   try {
-    // Check timestamps to determine if we should sync from Jira
-    if (!shouldSyncFromJira(githubIssue, jiraIssue)) {
-      // Don't log here - the main function will log a summary
-      return false; // Skip syncing assignee from Jira to GitHub
-    }
+    // Note: No timestamp gate here. Jira is the source of truth for assignees.
+    // The assignee sync is guarded by its own checks (no assignee, no mapping, already assigned)
+    // and is non-destructive (additive). The previous shouldSyncFromJira check was blocking
+    // assignee syncs whenever GitHub had any more recent activity (e.g. comments, labels),
+    // even though the Jira assignee change was legitimate.
 
     if (!jiraIssue.fields.assignee || !jiraIssue.fields.assignee.name) {
       return false; // No assignee in Jira
@@ -535,6 +537,96 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
   } catch (error) {
     errorCollector.addError(
       'SYNCJIRATOGITHUB: Error processing closed Jira issues',
+      error
+    );
+  }
+}
+
+// Sync recently-updated Jira issues to GitHub
+// Handles Jira issues that were updated within the `since` window but whose
+// corresponding GitHub issues were NOT fetched in the GitHub-driven loop
+// (e.g., the GitHub issue wasn't updated recently enough to appear in the fetch).
+export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner) {
+  try {
+    console.log(
+      `  Found ${recentlyUpdatedJiraIssues.length} recently-updated Jira issue(s) not already processed. Syncing to GitHub...`
+    );
+
+    for (const jiraIssue of recentlyUpdatedJiraIssues) {
+      try {
+        // Extract GitHub URL from the Jira description
+        const githubUrl = extractUpstreamUrl(jiraIssue.fields.description);
+        if (!githubUrl) {
+          // No Upstream URL means this issue was manually created (handled elsewhere)
+          continue;
+        }
+
+        const parsed = parseGitHubUrl(githubUrl);
+        if (!parsed) {
+          console.log(`  - Could not parse GitHub URL from Jira ${jiraIssue.key}: ${githubUrl}`);
+          continue;
+        }
+
+        const { owner: ghOwner, repo: ghRepo, issueNumber } = parsed;
+
+        // Fetch the GitHub issue details via GraphQL
+        await delay();
+        const response = await executeGraphQLQuery(GET_ISSUE_DETAILS, {
+          owner: ghOwner,
+          repo: ghRepo,
+          issueNumber,
+        }, ghOwner);
+
+        const githubIssue = response?.repository?.issue;
+        if (!githubIssue) {
+          console.log(`  - Could not fetch GitHub issue ${ghOwner}/${ghRepo}#${issueNumber} for Jira ${jiraIssue.key}`);
+          continue;
+        }
+
+        console.log(`\n  Syncing Jira ${jiraIssue.key} → GitHub #${githubIssue.number} (Jira-driven)`);
+
+        // Track what was synced for logging
+        const syncResults = [];
+
+        // Sync status: close GitHub issue if Jira is closed
+        const closedResult = await closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue);
+        if (closedResult) syncResults.push('closed');
+
+        // Sync status: reopen GitHub issue if Jira is reopened
+        const reopenedResult = await reopenGitHubIssueIfJiraReopened(jiraIssue, githubIssue);
+        if (reopenedResult) syncResults.push('reopened');
+
+        // Sync title from Jira to GitHub
+        const titleResult = await syncTitleToGitHub(jiraIssue, githubIssue);
+        if (titleResult) syncResults.push('title');
+
+        // Sync assignee from Jira to GitHub
+        const assigneeResult = await syncAssigneeToGitHub(jiraIssue, githubIssue);
+        if (assigneeResult) syncResults.push('assignee');
+
+        // Add Jira link to GitHub issue body
+        const linkResult = await addJiraLinkToGitHub(jiraIssue.key, githubIssue);
+        if (linkResult) syncResults.push('link');
+
+        if (syncResults.length > 0) {
+          console.log(
+            `  ✓ Jira-driven sync completed for ${jiraIssue.key} → GitHub #${githubIssue.number}: ${syncResults.join(', ')}`
+          );
+        } else {
+          console.log(
+            `  - No changes needed for ${jiraIssue.key} → GitHub #${githubIssue.number}`
+          );
+        }
+      } catch (error) {
+        errorCollector.addError(
+          `SYNCJIRATOGITHUB: Error syncing updated Jira issue ${jiraIssue.key} to GitHub`,
+          error
+        );
+      }
+    }
+  } catch (error) {
+    errorCollector.addError(
+      'SYNCJIRATOGITHUB: Error processing recently-updated Jira issues',
       error
     );
   }

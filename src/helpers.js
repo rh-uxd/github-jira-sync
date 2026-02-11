@@ -532,6 +532,7 @@ export const GET_ISSUE_DETAILS = `
         number
         title
         url
+        body
         bodyText
         state
         updatedAt
