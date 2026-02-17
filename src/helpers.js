@@ -235,6 +235,10 @@ export const availableComponents = [
     owner: 'patternfly',
   },
   {
+    name: 'patternfly-ai-coding',
+    owner: 'patternfly',
+  },
+  {
     name: 'patternfly-cli',
     owner: 'patternfly',
   },
