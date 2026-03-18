@@ -906,7 +906,7 @@ function adfBlocksToMarkdown(blocks, options = {}) {
         break;
       }
       case 'panel':
-        if (node.content) out.push(adfBlocksToMarkdown(node.content, {}));
+        if (node.content) out.push(adfBlocksToMarkdown(node.content, orderedIndex != null ? { orderedIndex: ord } : {}));
         break;
       case 'blockquote': {
         const inner = adfBlocksToMarkdown(node.content || [], {});
@@ -915,7 +915,7 @@ function adfBlocksToMarkdown(blocks, options = {}) {
       }
       default:
         if (node.content) {
-          out.push(adfBlocksToMarkdown(node.content, {}));
+          out.push(adfBlocksToMarkdown(node.content, orderedIndex != null ? { orderedIndex: ord } : {}));
         }
         break;
     }

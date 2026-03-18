@@ -91,8 +91,8 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
             // Conditionally update issue based on if it's a child of an epic
             const updatedData = { fields: {} };
             if (isEpic) {
-              // If parent is epic, set child's customfield 12311140 required for epic link
-              updatedData.fields['customfield_12311140'] = parentJiraKey;
+              // If parent is epic, set child's customfield customfield_10014 required for epic link
+              updatedData.fields['customfield_10014'] = parentJiraKey;
               // Remove parent field if it exists
               delete updatedData.fields.parent;
             } else {
@@ -104,7 +104,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               // TODO: this is throwing an error when trying to update the issuetype
               updatedData.fields.issuetype = {
                 name: 'Sub-task',
-                id: '5',
+                id: '10015',
               };
               console.log(
                 `  ! - Trying to update ${jiraIssue.key} to be a sub-task of ${parentJiraKey} may need to be done manually`
@@ -182,9 +182,9 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       const jiraIssueData = buildJiraIssueData(githubIssue, true);
       // If issue is a sub-task, keep issue type as sub-task
       // Avoids next GH sync resetting sub-task issuetype
-      if (jiraIssue.fields.issuetype.id === '5') {
+      if (jiraIssue.fields.issuetype.id === '10015') {
         jiraIssueData.fields.issuetype = {
-          id: '5',
+          id: '10015',
         };
       }
       // Prevent syncing assignees from GitHub to Jira if Jira issue already has an assignee
@@ -236,7 +236,7 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       }
 
       // Update child issues
-      const isEpic = jiraIssueData.fields.issuetype.id === '16';
+      const isEpic = jiraIssueData.fields.issuetype.id === '10000';
       await updateChildIssues(jiraIssue.key, githubIssue, isEpic);
     }
 

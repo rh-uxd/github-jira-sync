@@ -46,7 +46,7 @@ export async function createChildIssues(
 
     if (isEpic) {
       // Parent epic cannot contain child epic
-      if (jiraIssueType.id === 16) {
+      if (jiraIssueType.id === 10000) {
         console.error(' - !! - Epic child issue cannot be an Epic');
         return;
       }
@@ -55,11 +55,11 @@ export async function createChildIssues(
       childIssue.fields.issuetype = {
         id: jiraIssueType.id,
       };
-      childIssue.fields['customfield_12311140'] = parentJiraKey;
+      childIssue.fields['customfield_10014'] = parentJiraKey;
     } else {
       // For non-epic children, must be sub-tasks
       childIssue.fields.issuetype = {
-        id: '5',
+        id: '10015',
       };
       childIssue.fields.parent = {
         key: parentJiraKey,
@@ -107,7 +107,7 @@ export async function createJiraIssue(githubIssue) {
 
     // Create child issues for any sub-issues
     if (githubIssue.subIssues.totalCount > 0) {
-      const isEpic = jiraIssue.fields.issuetype.id === '16';
+      const isEpic = jiraIssue.fields.issuetype.id === '10000';
       await updateChildIssues(newJiraKey, githubIssue, isEpic);
     }
 
