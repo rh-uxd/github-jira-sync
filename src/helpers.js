@@ -906,7 +906,7 @@ function adfBlocksToMarkdown(blocks, options = {}) {
         break;
       }
       case 'panel':
-        if (node.content) out.push(adfBlocksToMarkdown(node.content, orderedIndex != null ? { orderedIndex: ord } : {}));
+        if (node.content) out.push(adfBlocksToMarkdown(node.content, {}));
         break;
       case 'blockquote': {
         const inner = adfBlocksToMarkdown(node.content || [], {});
@@ -915,7 +915,7 @@ function adfBlocksToMarkdown(blocks, options = {}) {
       }
       default:
         if (node.content) {
-          out.push(adfBlocksToMarkdown(node.content, orderedIndex != null ? { orderedIndex: ord } : {}));
+          out.push(adfBlocksToMarkdown(node.content, {}));
         }
         break;
     }
@@ -1128,7 +1128,6 @@ function markdownToADFBlocks(markdown) {
       !lines[i].match(/^(\s*[-*_]){3,}\s*$/) &&
       !lines[i].startsWith('```') &&
       !lines[i].match(/^[-*] /) &&
-      !lines[i].match(/^[-*] \[([ xX])\]\s+/) &&
       !lines[i].match(/^\d+\. /) &&
       !lines[i].match(/^>\s?/)
     ) {
@@ -1149,56 +1148,32 @@ function markdownToADFBlocks(markdown) {
   return blocks;
 }
 
-// Build a full ADF comment body with metadata header/footer
+// Build a full ADF comment body with metadata header/footer.
+// Pass { truncated: true } to replace the body with a size-limit notice.
 // All text/href must be strings or Jira returns "Operation value must be a string"
-function buildCommentADF(comment) {
-  const bodyBlocks = markdownToADFBlocks(comment.body || '');
+function buildCommentADF(comment, { truncated = false } = {}) {
   const urlStr = comment.url != null ? String(comment.url) : '';
   const authorStr = comment.author?.login != null ? String(comment.author.login) : '';
   const createdAtStr = comment.createdAt != null ? String(comment.createdAt) : '';
-  return {
-    type: 'doc',
-    version: 1,
-    content: [
-      {
-        type: 'paragraph',
-        content: [{ type: 'text', text: `Comment Author: ${authorStr}` }],
-      },
-      { type: 'rule' },
-      ...bodyBlocks,
-      { type: 'rule' },
-      {
-        type: 'paragraph',
-        content: [
-          { type: 'text', text: `Comment Created: ${createdAtStr}\nComment URL: ` },
-          { type: 'text', text: urlStr, marks: [{ type: 'link', attrs: { href: urlStr } }] },
-        ],
-      },
-    ],
-  };
-}
-
-// Build a truncated ADF comment when the full body exceeds Jira's size limit
-function buildTruncatedCommentADF(comment) {
-  const urlStr = comment.url != null ? String(comment.url) : '';
-  const authorStr = comment.author?.login != null ? String(comment.author.login) : '';
-  const createdAtStr = comment.createdAt != null ? String(comment.createdAt) : '';
-  return {
-    type: 'doc',
-    version: 1,
-    content: [
-      {
-        type: 'paragraph',
-        content: [{ type: 'text', text: `Comment Author: ${authorStr}` }],
-      },
-      { type: 'rule' },
-      {
+  const middleContent = truncated
+    ? [{
         type: 'paragraph',
         content: [
           { type: 'text', text: 'Comment was truncated due to size. Full comment available at: ' },
           { type: 'text', text: urlStr, marks: [{ type: 'link', attrs: { href: urlStr } }] },
         ],
+      }]
+    : markdownToADFBlocks(comment.body || '');
+  return {
+    type: 'doc',
+    version: 1,
+    content: [
+      {
+        type: 'paragraph',
+        content: [{ type: 'text', text: `Comment Author: ${authorStr}` }],
       },
+      { type: 'rule' },
+      ...middleContent,
       { type: 'rule' },
       {
         type: 'paragraph',
@@ -1489,7 +1464,7 @@ export async function syncCommentsToJira(jiraIssueKey, githubComments) {
         console.log(
           ` - Comment from ${comment.author.login} is too large. Truncating...`
         );
-        commentBody = buildTruncatedCommentADF(comment);
+        commentBody = buildCommentADF(comment, { truncated: true });
       }
       // Add the comment to Jira
       await delay();

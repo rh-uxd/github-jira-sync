@@ -230,9 +230,8 @@ export async function addJiraLinkToGitHub(jiraIssueKey, githubIssue) {
 
     const body = githubIssue.body ?? '';
     const bodyHasKey = body.includes(jiraIssueKey);
-    const bodyEndsWithFooter = body.trimEnd().endsWith(footer.trim()) || body.includes(`**Jira Issue:** [${jiraIssueKey}]`);
 
-    if (!bodyHasKey && !bodyEndsWithFooter && body) {
+    if (!bodyHasKey && body) {
       const updatedBody = `${body}${footer}`;
       await updateGitHubIssue(owner, repo, issueNumber, {
         body: updatedBody,
@@ -716,7 +715,7 @@ export async function createGitHubIssuesForManualJira(manualJiraIssues) {
         const markdownDescription = jiraDescriptionToMarkdown(jiraIssue.fields.description);
 
         // Build GitHub issue body with Jira reference
-        const githubBody = `${markdownDescription}\n\n---\n\n**Jira Issue:** [${jiraIssue.key}](https://redhat.atlassian.net/browse/${jiraIssue.key})`;
+        const githubBody = `${markdownDescription}${jiraLinkFooter(jiraIssue.key)}`;
 
         // Create GitHub issue
         const issueData = {
