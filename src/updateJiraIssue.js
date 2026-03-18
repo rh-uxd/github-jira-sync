@@ -49,6 +49,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
     );
 
     // Check if there are subissues
+    let skippedChildCount = 0;
     if (githubIssue?.subIssues?.totalCount > 0) {
       // Get sub-issues from the GraphQL response
       const subIssues = githubIssue.subIssues.nodes;
@@ -58,15 +59,14 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
         const currentChildIssue = existingChildIssuesMap.get(subIssue.url);
 
         if (currentChildIssue) {
-          // Sync comments for the existing child issue
+          // Already linked as a child — just sync comments if needed
           if (subIssue.comments?.totalCount > 0) {
             await syncCommentsToJira(currentChildIssue.key, subIssue.comments);
           }
-
           existingChildIssuesMap.delete(subIssue.url);
+          skippedChildCount++;
         } else {
-          // check if issue exists and needs to be flagged as child issue
-          // Find the corresponding Jira issue
+          // Not currently a child — check if the Jira issue exists
           const jiraIssue = await findJiraIssue(subIssue.url);
 
           if (!jiraIssue) {
@@ -81,27 +81,19 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
             );
             console.log(
               newJiraKey
-                ? ` - ChildIssue: Completed creating new Jira ${newJiraKey} as child of ${parentJiraKey} (GH #${subIssue.number})`
-                : ` !! - ChildIssue: Error creating new Jira issue as child of as child of ${parentJiraKey} (GH #${subIssue.number})`
+                ? ` - ChildIssue: Created ${newJiraKey} as child of ${parentJiraKey} (GH #${subIssue.number})`
+                : ` !! - ChildIssue: Error creating child of ${parentJiraKey} (GH #${subIssue.number})`
             );
           } else {
-            // Update existing Jira issue to link it as a child of the parent Jira issue
-            console.log(
-              ` - ChildIssue: Updating existing Jira ${jiraIssue.key} to update as child (GH #${subIssue.number})...`
-            );
-            // Conditionally update issue based on if it's a child of an epic
+            // Link existing Jira issue as a child of the parent
             const updatedData = { fields: {} };
             if (isEpic) {
-              // If parent is epic, set child's customfield customfield_10014 required for epic link
               updatedData.fields['customfield_10014'] = parentJiraKey;
-              // Remove parent field if it exists
               delete updatedData.fields.parent;
             } else {
-              // If not child of epic, set parent field
               updatedData.fields.parent = {
                 key: parentJiraKey,
               };
-              // and set issue type to sub-task
               // TODO: this is throwing an error when trying to update the issuetype
               updatedData.fields.issuetype = {
                 name: 'Sub-task',
@@ -113,17 +105,22 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
             }
             await editJiraIssue(jiraIssue.key, updatedData);
 
-            // Sync comments for the existing issue being converted to a child
             if (subIssue.comments?.totalCount > 0) {
               await syncCommentsToJira(jiraIssue.key, subIssue.comments);
             }
 
             console.log(
-              ` - ChildIssue: Completed updating existing Jira ${jiraIssue.key} to child of ${parentJiraKey} (GH #${subIssue.number})`
+              ` - ChildIssue: Linked ${jiraIssue.key} as child of ${parentJiraKey} (GH #${subIssue.number})`
             );
           }
         }
       }
+    }
+
+    if (skippedChildCount > 0) {
+      console.log(
+        ` - ChildIssues: ${skippedChildCount} already linked to ${parentJiraKey}, no changes needed`
+      );
     }
 
     // Close any remaining Jira child issues that no longer exist in GitHub,
