@@ -21,7 +21,7 @@ async function findChildIssues(jiraIssueKey) {
     const response = await jiraClient.get('/rest/api/3/search/jql', {
       params: {
         jql: `parent = ${jiraIssueKey}`,
-        fields: 'key,description,updated',
+        fields: 'key,description,updated,status',
       },
     });
     return response.data.issues;
@@ -126,11 +126,29 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
       }
     }
 
-    // Close any remaining Jira child issues that no longer exist in GitHub
-    for (const [_, child] of existingChildIssuesMap) {
-      await transitionJiraIssue(child.key, 'Closed');
+    // Close any remaining Jira child issues that no longer exist in GitHub,
+    // but ONLY if we fetched all sub-issues from GitHub. If the response was
+    // truncated by pagination, unmatched Jira children may simply be beyond
+    // the page limit — closing them would be incorrect.
+    const fetchedCount = githubIssue?.subIssues?.nodes?.length ?? 0;
+    const totalCount = githubIssue?.subIssues?.totalCount ?? 0;
+    const allSubIssuesFetched = fetchedCount >= totalCount;
+
+    if (allSubIssuesFetched) {
+      for (const [_, child] of existingChildIssuesMap) {
+        if (child.fields?.status?.name === 'Closed') {
+          continue; // Already closed, skip to avoid redundant transition
+        }
+        await transitionJiraIssue(child.key, 'Closed');
+        console.log(
+          ` - Closed child issue ${child.key} as it's no longer open in GitHub`
+        );
+      }
+    } else if (existingChildIssuesMap.size > 0) {
       console.log(
-        ` - Closed child issue ${child.key} as it's no longer open in GitHub`
+        ` - ⚠ Skipping cleanup of ${existingChildIssuesMap.size} unmatched Jira child issues: ` +
+          `only ${fetchedCount} of ${totalCount} GitHub sub-issues were fetched (pagination limit). ` +
+          `Increase numSubIssuesPerIssue to process all sub-issues.`
       );
     }
   } catch (error) {

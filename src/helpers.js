@@ -119,7 +119,7 @@ const platformTeamUsers = {
   mcoker: '712020:d39a5f00-3a18-4e95-99bc-8ec6d7dec132',
   'wise-king-sullyman': '712020:5e90db8d-7d0b-4a09-a599-e81aa8b9ff00',
   thatblindgeye: '712020:6f63713c-d61e-49de-8f52-be48015241ed',
-  kmcfaul: '712020:b46e5c4b-c4b6-4c9c-a998-7811631e4f8',
+  kmcfaul: '712020:b46e5c4b-c4b6-4c9c-a998-7811631e4f81',
   srambach: '557058:a502f956-47d6-4de9-85b0-75424d4014d0'
 };
 
@@ -223,11 +223,11 @@ export const availableComponents = [
   {
     name: 'design-tokens',
     owner: 'patternfly',
-  },*/
+  },
   {
     name: 'icons',
     owner: 'patternfly',
-  },/*
+  },
   {
     name: 'mission-control-dashboard',
     owner: 'patternfly',
@@ -241,17 +241,17 @@ export const availableComponents = [
     owner: 'patternfly',
   },
   {
-    name: 'patternfly-ai-coding',
+    name: 'ai-helpers',
     owner: 'patternfly',
   },
   {
     name: 'patternfly-cli',
     owner: 'patternfly',
-  },
+  },*/
   {
     name: 'patternfly-design',
     owner: 'patternfly',
-  },
+  },/*
   {
     name: 'patternfly-design-kit',
     owner: 'patternfly',
@@ -436,7 +436,7 @@ export const GET_ALL_REPO_ISSUES = `
     $numLabelsPerIssue: Int = 10
     $numAssigneesPerIssue: Int = 10
     $numCommentsPerIssue: Int = 20
-    $numSubIssuesPerIssue: Int = 30
+    $numSubIssuesPerIssue: Int = 150
     $since: DateTime
   ) {
     repository(owner: $owner, name: $repo) {
