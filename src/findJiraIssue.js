@@ -39,7 +39,7 @@ const fetchJiraIssue = async (githubIssueLink) => {
     const response = await jiraClient.get('/rest/api/3/search/jql', {
       params: {
         jql,
-        fields: 'key,id,description,status,assignee,issuetype,updated',
+        fields: 'key,id,description,status,assignee,issuetype,updated,summary',
       },
     });
     // Check against regex to filter out any substring matches
