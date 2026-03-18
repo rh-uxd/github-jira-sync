@@ -48,7 +48,6 @@ const fetchJiraIssue = async (githubIssueLink) => {
         isUpstreamUrlMatch(issue.fields.description, githubIssueLink)
       ) || null;
     let foundIssue = null;
-
     if (!foundIssues.length) {
       // No Jira match found
       console.log('No Jira issue found for GitHub issue:', githubIssueLink);

@@ -730,6 +730,7 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
 export function extractTextFromADF(adf) {
   if (!adf) return '';
   if (typeof adf === 'string') return adf;
+  if (adf.type === 'hardBreak') return '\n';
   if (adf.type === 'text') return adf.text || '';
   if (adf.content) {
     return adf.content.map(extractTextFromADF).join('');
