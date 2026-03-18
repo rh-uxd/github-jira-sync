@@ -374,12 +374,16 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   const jiraIssue = {
     fields: {
       summary: title,
-      description: buildDescriptionADF(body, {
-        number,
-        url,
-        reporter: author?.login || '',
-        assignees: assigneeLogins.join(', '),
-      }),
+      description: buildDescriptionADF(
+        // Strip Jira link footer so it doesn't pollute the Jira description on subsequent syncs
+        body.replace(/\n{1,2}---\n{1,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim(),
+        {
+          number,
+          url,
+          reporter: author?.login || '',
+          assignees: assigneeLogins.join(', '),
+        }
+      ),
       labels: ['GitHub', ...jiraLabels],
       ...(jiraAssignee && { assignee: { accountId: jiraAssignee } }),
       issuetype: {
@@ -856,18 +860,20 @@ function adfBlocksToMarkdown(blocks, options = {}) {
       }
       case 'orderedlist': {
         const items = node.content || [];
+        const listLines = [];
         for (const item of items) {
           if (adfNodeType(item) !== 'listitem') continue;
           const itemContent = item.content || [];
           for (const block of itemContent) {
             if (block.type === 'paragraph') {
-              out.push(`${ord}. ` + adfInlineToMarkdown(block.content || []));
+              listLines.push(`${ord}. ` + adfInlineToMarkdown(block.content || []));
               ord++;
             } else {
-              out.push(adfBlocksToMarkdown([block], {}));
+              listLines.push(adfBlocksToMarkdown([block], {}));
             }
           }
         }
+        out.push(listLines.join('\n'));
         break;
       }
       case 'listitem': {

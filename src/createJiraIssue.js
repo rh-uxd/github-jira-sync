@@ -7,6 +7,7 @@ import {
   buildDescriptionADF,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
+import { addJiraLinkToGitHub } from './syncJiraToGitHub.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { errorCollector } from './index.js';
 
@@ -68,6 +69,8 @@ export async function createChildIssues(
 
     // Create new Jira issue & add remote link to GitHub issue
     const newJiraKey = await createNewJiraIssue(childIssue, subIssue);
+    // Add Jira link to GitHub issue body immediately so it appears on the first sync
+    await addJiraLinkToGitHub(newJiraKey, subIssue);
     // If GH issue is closed, transition Jira issue to closed (cannot create a closed issue)
     if (subIssue.state === 'CLOSED') {
       await transitionJiraIssue(newJiraKey, 'Closed');
@@ -94,6 +97,8 @@ export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
     const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
+    // Add Jira link to GitHub issue body immediately so it appears on the first sync
+    await addJiraLinkToGitHub(newJiraKey, githubIssue);
 
     // If GH issue is closed, transition Jira issue to closed
     if (githubIssue.state === 'CLOSED') {
