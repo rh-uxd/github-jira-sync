@@ -124,7 +124,7 @@ export const errorCollector = new ErrorCollector();
 
 const fetchJiraIssues = async (owner, repo, since) => {
   console.log(' - fetching Jira...');
-  const response = await jiraClient.get('/rest/api/2/search', {
+  const response = await jiraClient.get('/rest/api/3/search/jql', {
     params: {
       jql: `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
       maxResults: 1000,
@@ -140,7 +140,7 @@ const fetchClosedJiraIssues = async (owner, repo, since) => {
   console.log(` - fetching closed Jira issues for component ${repo}...`);
   // Format since date for Jira JQL (Jira uses format: YYYY-MM-DD HH:mm)
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
-  const response = await jiraClient.get('/rest/api/2/search', {
+  const response = await jiraClient.get('/rest/api/3/search/jql', {
     params: {
       jql: `project = PF AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
       maxResults: 1000,
@@ -160,7 +160,7 @@ const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
   console.log(` - fetching manually created Jira issues for component ${repo}...`);
   // Format since date for Jira JQL
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
-  const response = await jiraClient.get('/rest/api/2/search', {
+  const response = await jiraClient.get('/rest/api/3/search/jql', {
     params: {
       jql: `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
       maxResults: 1000,
@@ -202,7 +202,6 @@ async function syncIssues(owner, repo, since, direction = 'both') {
       console.log(`\n= GitHub → Jira sync: existing GitHub issues updated since ${since} =\n`);
       // Fetch all open Jira issues for the specific repo/component, save to exported variable
       jiraIssues = await fetchJiraIssues(owner, repo, since);
-
       // Fetch all updated GitHub issues from GraphQL response
       const githubIssues = await fetchGitHubIssues(owner, repo, since);
 

@@ -9,38 +9,37 @@ import {
   closeGitHubIssue,
   jiraClient,
   editJiraIssue,
-  convertMarkdownToJira,
   availableComponents,
   shouldSyncFromJira,
   extractJiraKeyFromText,
   fetchJiraIssueByKey,
   executeGraphQLQuery,
   GET_ISSUE_DETAILS,
+  extractTextFromADF,
+  appendMetadataToADF,
+  adfToMarkdown,
 } from './helpers.js';
 import { errorCollector } from './index.js';
 import j2m from 'jira2md';
 
-// Convert Jira markup to Markdown
-const convertJiraToMarkdown = (jiraText) => {
+// Convert Jira description (ADF or legacy string) to GitHub Markdown, preserving formatting
+function jiraDescriptionToMarkdown(description) {
+  if (!description) return '';
+  // Jira Cloud v3 API returns ADF object; convert to markdown and strip sync metadata
+  if (typeof description === 'object' && description?.type === 'doc') {
+    return adfToMarkdown(description, { stripMetadata: true });
+  }
+  // Legacy string (e.g. Jira markup): use jira2md if available
+  const jiraText = typeof description === 'string' ? description : extractTextFromADF(description);
   if (!jiraText) return '';
-  // jira2md library converts markdown to jira with to_jira()
-  // For reverse conversion, we'll use a simple approach or the library's method
-  // Note: jira2md may not have reverse conversion, so we'll do basic conversion
   try {
-    // Try camelCase method first
-    if (typeof j2m.toMarkdown === 'function') {
-      return j2m.toMarkdown(jiraText);
-    }
-    // Try snake_case method
-    if (typeof j2m.to_markdown === 'function') {
-      return j2m.to_markdown(jiraText);
-    }
-  } catch (error) {
-    // If conversion fails, return the text as-is (Jira markup is mostly readable)
-    console.log(`  - Warning: Could not convert Jira markup to Markdown, using as-is`);
+    if (typeof j2m.toMarkdown === 'function') return j2m.toMarkdown(jiraText);
+    if (typeof j2m.to_markdown === 'function') return j2m.to_markdown(jiraText);
+  } catch (err) {
+    console.log('  - Warning: Could not convert Jira markup to Markdown, using as-is');
   }
   return jiraText;
-};
+}
 
 // Parse GitHub URL to extract owner, repo, and issue number
 function parseGitHubUrl(githubUrl) {
@@ -100,6 +99,50 @@ export async function syncTitleToGitHub(jiraIssue, githubIssue) {
   }
 }
 
+// Normalize body for comparison (trim, normalize line endings)
+function normalizeBody(body) {
+  if (body == null) return '';
+  return String(body).replace(/\r\n/g, '\n').trim();
+}
+
+// Sync description/body from Jira to GitHub
+export async function syncDescriptionToGitHub(jiraIssue, githubIssue) {
+  try {
+    if (!shouldSyncFromJira(githubIssue, jiraIssue)) {
+      return false;
+    }
+
+    const markdownDescription = jiraDescriptionToMarkdown(jiraIssue.fields.description);
+    const newBody = `${markdownDescription}${jiraLinkFooter(jiraIssue.key)}`;
+
+    const currentBody = normalizeBody(githubIssue.body);
+    const proposedBody = normalizeBody(newBody);
+    if (currentBody === proposedBody) {
+      return false;
+    }
+
+    const parsed = parseGitHubUrl(githubIssue.url);
+    if (!parsed) {
+      console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
+      return false;
+    }
+
+    const { owner, repo, issueNumber } = parsed;
+    await updateGitHubIssue(owner, repo, issueNumber, { body: newBody });
+
+    console.log(
+      `  ✓ Synced description from Jira ${jiraIssue.key} → GitHub issue #${githubIssue.number}`
+    );
+    return true;
+  } catch (error) {
+    errorCollector.addError(
+      `SYNCJIRATOGITHUB: Error syncing description from Jira ${jiraIssue.key} to GitHub`,
+      error
+    );
+    return false;
+  }
+}
+
 // Sync assignee from Jira to GitHub
 export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
   try {
@@ -109,11 +152,11 @@ export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
     // assignee syncs whenever GitHub had any more recent activity (e.g. comments, labels),
     // even though the Jira assignee change was legitimate.
 
-    if (!jiraIssue.fields.assignee || !jiraIssue.fields.assignee.name) {
+    // Jira v3 uses accountId; fallback to id for v2/legacy
+    const jiraAssignee = jiraIssue.fields.assignee?.accountId ?? jiraIssue.fields.assignee?.id;
+    if (!jiraIssue.fields.assignee || !jiraAssignee) {
       return false; // No assignee in Jira
     }
-
-    const jiraAssignee = jiraIssue.fields.assignee.name;
     const githubAssignee = jiraToGitHubUserMapping[jiraAssignee];
 
     if (!githubAssignee) {
@@ -166,11 +209,16 @@ export async function syncAssigneeToGitHub(jiraIssue, githubIssue) {
   }
 }
 
-// Add Jira link to GitHub issue body
+// Footer we append when adding Jira link (must match syncDescriptionToGitHub so we don't duplicate)
+function jiraLinkFooter(jiraIssueKey) {
+  const jiraLink = `https://redhat.atlassian.net/browse/${jiraIssueKey}`;
+  return `\n\n---\n\n**Jira Issue:** [${jiraIssueKey}](${jiraLink})`;
+}
+
+// Add Jira link to GitHub issue body (only if not already present; never appends if body ends with our footer)
 export async function addJiraLinkToGitHub(jiraIssueKey, githubIssue) {
   try {
-    const jiraLink = `https://issues.redhat.com/browse/${jiraIssueKey}`;
-    const jiraLinkMarkdown = `**Jira Issue:** [${jiraIssueKey}](${jiraLink})`;
+    const footer = jiraLinkFooter(jiraIssueKey);
     const parsed = parseGitHubUrl(githubIssue.url);
     if (!parsed) {
       console.log(`  - Could not parse GitHub URL: ${githubIssue.url}`);
@@ -180,12 +228,12 @@ export async function addJiraLinkToGitHub(jiraIssueKey, githubIssue) {
     const { owner, repo, issueNumber } = parsed;
     let bodyUpdated = false;
 
-    // Check if Jira link already exists in body
-    const bodyHasLink = githubIssue.body?.includes(jiraIssueKey) || false;
+    const body = githubIssue.body ?? '';
+    const bodyHasKey = body.includes(jiraIssueKey);
+    const bodyEndsWithFooter = body.trimEnd().endsWith(footer.trim()) || body.includes(`**Jira Issue:** [${jiraIssueKey}]`);
 
-    // Add to body if not present
-    if (!bodyHasLink && githubIssue.body) {
-      const updatedBody = `${githubIssue.body}\n\n---\n\n${jiraLinkMarkdown}`;
+    if (!bodyHasKey && !bodyEndsWithFooter && body) {
+      const updatedBody = `${body}${footer}`;
       await updateGitHubIssue(owner, repo, issueNumber, {
         body: updatedBody,
       });
@@ -659,17 +707,16 @@ export async function createGitHubIssuesForManualJira(manualJiraIssues) {
         const owner = componentMapping.owner;
         const repo = componentMapping.name;
 
-        // Extract issue details from Jira
+        // Extract issue details from Jira (v3 uses accountId; fallback to id)
         const title = jiraIssue.fields.summary || 'Untitled Issue';
-        const description = jiraIssue.fields.description || '';
-        const jiraAssignee = jiraIssue.fields.assignee?.name;
+        const jiraAssignee = jiraIssue.fields.assignee?.accountId ?? jiraIssue.fields.assignee?.id;
         const githubAssignee = jiraAssignee ? jiraToGitHubUserMapping[jiraAssignee] : null;
 
-        // Convert Jira markup to Markdown
-        const markdownDescription = convertJiraToMarkdown(description);
+        // Convert Jira description (ADF or string) to Markdown so formatting is preserved on GitHub
+        const markdownDescription = jiraDescriptionToMarkdown(jiraIssue.fields.description);
 
         // Build GitHub issue body with Jira reference
-        const githubBody = `${markdownDescription}\n\n---\n\n**Jira Issue:** [${jiraIssue.key}](https://issues.redhat.com/browse/${jiraIssue.key})`;
+        const githubBody = `${markdownDescription}\n\n---\n\n**Jira Issue:** [${jiraIssue.key}](https://redhat.atlassian.net/browse/${jiraIssue.key})`;
 
         // Create GitHub issue
         const issueData = {
@@ -689,8 +736,14 @@ export async function createGitHubIssuesForManualJira(manualJiraIssues) {
         );
 
         // Update Jira issue description to include Upstream URL
+        // Use appendMetadataToADF to preserve the original ADF content/formatting
         const upstreamUrl = createdIssue.html_url;
-        const updatedDescription = `${description}\n\n----\n\nGH Issue ${createdIssue.number}\nUpstream URL: ${upstreamUrl}\nReporter: ${jiraIssue.fields.reporter?.displayName || ''}\nAssignees: ${githubAssignee || ''}`;
+        const updatedDescription = appendMetadataToADF(jiraIssue.fields.description, {
+          number: createdIssue.number,
+          url: upstreamUrl,
+          reporter: jiraIssue.fields.reporter?.displayName ?? jiraIssue.fields.reporter?.accountId ?? '',
+          assignees: githubAssignee || '',
+        });
 
         await delay();
         await editJiraIssue(jiraIssue.key, {

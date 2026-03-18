@@ -6,17 +6,18 @@ import {
   syncCommentsToJira,
   addRemoteLinkToJiraIssue,
   shouldSyncFromGitHub,
+  extractTextFromADF,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { errorCollector } from './index.js';
-import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened } from './syncJiraToGitHub.js';
+import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleToGitHub, syncDescriptionToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened } from './syncJiraToGitHub.js';
 
 async function findChildIssues(jiraIssueKey) {
   try {
     delay();
-    const response = await jiraClient.get('/rest/api/2/search', {
+    const response = await jiraClient.get('/rest/api/3/search/jql', {
       params: {
         jql: `parent = ${jiraIssueKey}`,
         fields: 'key,description,updated',
@@ -40,7 +41,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
       existingChildIssues
         .map((childIssue) => {
           const match =
-            childIssue.fields.description.match(/Upstream URL: (.*)/);
+            extractTextFromADF(childIssue.fields.description).match(/Upstream URL: (.*)/);
           return match ? [match[1], childIssue] : null;
         })
         .filter(Boolean)
@@ -148,6 +149,7 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
         title: false,
         assignee: false,
         link: false,
+        description: false,
         closed: false,
         reopened: false,
       },
@@ -242,12 +244,18 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
     // These functions check timestamps internally and will skip if GitHub is newer
     const titleResult = await syncTitleToGitHub(jiraIssue, githubIssue);
     if (titleResult) syncSummary.jiraToGitHub.title = true;
-    
+
+    const descriptionResult = await syncDescriptionToGitHub(jiraIssue, githubIssue);
+    if (descriptionResult) syncSummary.jiraToGitHub.description = true;
+
+    // Skip adding Jira link when we just updated the body – the new body already includes the canonical footer
     const assigneeResult = await syncAssigneeToGitHub(jiraIssue, githubIssue);
     if (assigneeResult) syncSummary.jiraToGitHub.assignee = true;
-    
-    const linkResult = await addJiraLinkToGitHub(jiraIssue.key, githubIssue);
-    if (linkResult) syncSummary.jiraToGitHub.link = true;
+
+    if (!descriptionResult) {
+      const linkResult = await addJiraLinkToGitHub(jiraIssue.key, githubIssue);
+      if (linkResult) syncSummary.jiraToGitHub.link = true;
+    }
 
     // Log summary
     const summaryParts = [];

@@ -27,9 +27,11 @@ This Node.js application automatically synchronizes issues between GitHub and Ji
    # GitHub Configuration
    GH_TOKEN=your_GH_personal_access_token
 
-   # Jira Configuration
-   JIRA_PAT=your_jira_personal_access_token
+   # Jira Configuration (Jira Cloud uses Basic auth: email + API token)
+   JIRA_EMAIL=your_atlassian_account_email@example.com
+   JIRA_API_TOKEN=your_jira_api_token
    ```
+   For Jira Cloud, use your **Atlassian account email** and an [API token](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/).
    
 ## How Sync Works
 

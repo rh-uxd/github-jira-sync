@@ -4,7 +4,7 @@ import {
   getJiraComponent,
   createNewJiraIssue,
   syncCommentsToJira,
-  convertMarkdownToJira,
+  buildDescriptionADF,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
@@ -30,11 +30,12 @@ export async function createChildIssues(
           key: 'PF',
         },
         summary: subIssue.title,
-        description: `${subIssue?.body ? convertMarkdownToJira(subIssue.body) : ''}\n\n----\n\nGH Issue ${
-          subIssue.number
-        }\nUpstream URL: ${subIssue.url}\nReporter: ${
-          subIssue?.author?.login || ''
-        }\nAssignees: ${assignees}`,
+        description: buildDescriptionADF(subIssue.body, {
+          number: subIssue.number,
+          url: subIssue.url,
+          reporter: subIssue?.author?.login || '',
+          assignees,
+        }),
       },
     };
 

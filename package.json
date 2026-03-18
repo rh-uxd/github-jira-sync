@@ -6,7 +6,8 @@
   "scripts": {
     "sync": "node src/index.js",
     "sync:since": "node src/index.js --since",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:jira": "node scripts/test-jira-connection.js"
   },
   "keywords": [],
   "author": "",
