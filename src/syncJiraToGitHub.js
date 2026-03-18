@@ -120,7 +120,9 @@ export async function syncDescriptionToGitHub(jiraIssue, githubIssue) {
     }
 
     const markdownDescription = jiraDescriptionToMarkdown(jiraIssue.fields.description);
-    const newBody = `${markdownDescription}${jiraLinkFooter(jiraIssue.key)}`;
+    // Remove trailing horizontal rule(s) that may have leaked from incomplete metadata stripping
+    const cleanDescription = markdownDescription.replace(/(\n-{3,})+\s*$/, '').trim();
+    const newBody = `${cleanDescription}${jiraLinkFooter(jiraIssue.key)}`;
 
     const currentBody = normalizeBody(githubIssue.body);
     const proposedBody = normalizeBody(newBody);

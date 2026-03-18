@@ -206,7 +206,7 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
         .trim();
       const currentJiraMarkdown = adfToMarkdown(jiraIssue.fields.description, { stripMetadata: true });
       const githubBodyClean = (githubIssue.body || '')
-        .replace(/\n{1,2}---\n{1,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
+        .replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
       const descriptionChanged =
         normalizeForCompare(currentJiraMarkdown) !== normalizeForCompare(githubBodyClean);
       if (!descriptionChanged) {

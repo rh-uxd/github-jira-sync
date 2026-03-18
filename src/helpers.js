@@ -376,7 +376,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
       summary: title,
       description: buildDescriptionADF(
         // Strip Jira link footer so it doesn't pollute the Jira description on subsequent syncs
-        body.replace(/\n{1,2}---\n{1,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim(),
+        body.replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim(),
         {
           number,
           url,
