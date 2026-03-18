@@ -99,10 +99,17 @@ export async function syncTitleToGitHub(jiraIssue, githubIssue) {
   }
 }
 
-// Normalize body for comparison (trim, normalize line endings)
+// Normalize body for comparison — strips whitespace artifacts introduced by the ADF roundtrip
+// so that semantically identical descriptions compare as equal.
 function normalizeBody(body) {
   if (body == null) return '';
-  return String(body).replace(/\r\n/g, '\n').trim();
+  return String(body)
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+$/gm, '')     // strip trailing whitespace per line
+    .replace(/^[ \t]+/gm, '')     // strip leading whitespace (Jira strips leading spaces from ADF text nodes)
+    .replace(/\n{3,}/g, '\n\n')   // collapse excess blank lines to max one
+    .replace(/^(#{1,6} [^\n]+)\n(?!\n)/gm, '$1\n\n')  // add blank line after headings (ADF roundtrip always produces this)
+    .trim();
 }
 
 // Sync description/body from Jira to GitHub
@@ -522,6 +529,36 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
       }
 
       const { owner, repo, issueNumber } = parsed;
+
+      // Before closing, check if an OPEN Jira issue also links to this GitHub issue.
+      // This handles duplicate Jira issues: if the "real" Jira issue is still open,
+      // we must not close the GitHub issue just because a duplicate was closed.
+      try {
+        await delay();
+        const openCheck = await jiraClient.get('/rest/api/3/search/jql', {
+          params: {
+            jql: `project = PF AND status not in (Closed, Resolved) AND description ~ "\\"Upstream URL: ${githubUrl}\\""`,
+            maxResults: 1,
+            fields: 'key',
+          },
+        });
+        const openMatches = (openCheck?.data?.issues || []).filter(
+          (issue) => issue.key !== jiraIssue.key
+        );
+        if (openMatches.length > 0) {
+          console.log(
+            `  - Skipping close for GitHub issue ${owner}/${repo}#${issueNumber}: ` +
+            `open Jira issue ${openMatches[0].key} also links to this issue (closed ${jiraIssue.key} is likely a duplicate)`
+          );
+          continue;
+        }
+      } catch (err) {
+        // On error, skip the close to avoid false closures
+        console.log(
+          `  - Warning: Could not verify open Jira links for ${githubUrl}, skipping close to be safe`
+        );
+        continue;
+      }
 
       try {
         // Get GitHub issue to check if it's already closed

@@ -7,6 +7,7 @@ import {
   addRemoteLinkToJiraIssue,
   shouldSyncFromGitHub,
   extractTextFromADF,
+  adfToMarkdown,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
@@ -192,18 +193,37 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       if (hadAssignee) {
         delete jiraIssueData.fields.assignee;
       }
-      
+
+      // Compare description to avoid unnecessary writes and feedback loops.
+      // Normalize both sides the same way to ignore ADF roundtrip whitespace artifacts
+      // (e.g. blank lines added after headings, leading spaces stripped by Jira).
+      const normalizeForCompare = (text) => String(text || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/[ \t]+$/gm, '')
+        .replace(/^[ \t]+/gm, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/^(#{1,6} [^\n]+)\n(?!\n)/gm, '$1\n\n')
+        .trim();
+      const currentJiraMarkdown = adfToMarkdown(jiraIssue.fields.description, { stripMetadata: true });
+      const githubBodyClean = (githubIssue.body || '')
+        .replace(/\n{1,2}---\n{1,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
+      const descriptionChanged =
+        normalizeForCompare(currentJiraMarkdown) !== normalizeForCompare(githubBodyClean);
+      if (!descriptionChanged) {
+        delete jiraIssueData.fields.description;
+      }
+
       // Check what changed (compare meaningful fields)
       const titleChanged = jiraIssue.fields.summary !== githubIssue.title;
       const hadGitHubAssignee = githubIssue.assignees?.nodes?.length > 0;
       const assigneeChanged = !hadAssignee && hadGitHubAssignee;
-      
+
       await editJiraIssue(jiraIssue.key, jiraIssueData);
 
       // Log what was synced
       const changes = [];
       if (titleChanged) changes.push('title');
-      changes.push('description'); // Description always syncs (includes metadata)
+      if (descriptionChanged) changes.push('description');
       if (assigneeChanged) changes.push('assignee');
       
       console.log(
