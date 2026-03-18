@@ -436,7 +436,7 @@ export const GET_ALL_REPO_ISSUES = `
     $numLabelsPerIssue: Int = 10
     $numAssigneesPerIssue: Int = 10
     $numCommentsPerIssue: Int = 20
-    $numSubIssuesPerIssue: Int = 150
+    $numSubIssuesPerIssue: Int = 100
     $since: DateTime
   ) {
     repository(owner: $owner, name: $repo) {

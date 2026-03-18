@@ -4,7 +4,6 @@ import {
   editJiraIssue,
   delay,
   syncCommentsToJira,
-  addRemoteLinkToJiraIssue,
   shouldSyncFromGitHub,
   extractTextFromADF,
   adfToMarkdown,
@@ -244,8 +243,6 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       console.log(
         `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
       );
-
-      addRemoteLinkToJiraIssue(jiraIssue.key, githubIssue);
 
       // Sync comments
       if (githubIssue.comments.totalCount > 0) {
