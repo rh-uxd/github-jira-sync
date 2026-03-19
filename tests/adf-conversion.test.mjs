@@ -193,6 +193,77 @@ buildRunner(`
   this.assert(blocks[1].type === 'taskList', 'second is taskList');
 `).call({ assert, randomUUID });
 
+// ─── HTML <details>/<summary> → ADF expand ──────────────────────────────────
+
+console.log('\n=== HTML <details>/<summary> → ADF expand ===');
+
+buildRunner(`
+  const md = '<details>\\n<summary>Related PRs</summary>\\n\\nSome content here\\n[link](https://example.com)\\n</details>';
+  const blocks = markdownToADFBlocks(md);
+
+  this.assert(blocks.length === 1, 'produces exactly 1 block');
+  this.assert(blocks[0].type === 'expand', 'block is expand');
+  this.assert(blocks[0].attrs.title === 'Related PRs', 'title matches summary text');
+  this.assert(blocks[0].content.length > 0, 'has content blocks');
+`).call({ assert, randomUUID });
+
+// ─── Multiple <details> blocks ──────────────────────────────────────────────
+
+console.log('\n=== Multiple <details> blocks ===');
+
+buildRunner(`
+  const md = '<details>\\n<summary>Section 1</summary>\\n\\nFirst\\n</details>\\n\\n<details>\\n<summary>Section 2</summary>\\n\\nSecond\\n</details>';
+  const blocks = markdownToADFBlocks(md);
+
+  this.assert(blocks.length === 2, 'produces 2 expand blocks');
+  this.assert(blocks[0].type === 'expand', 'first is expand');
+  this.assert(blocks[0].attrs.title === 'Section 1', 'first title correct');
+  this.assert(blocks[1].type === 'expand', 'second is expand');
+  this.assert(blocks[1].attrs.title === 'Section 2', 'second title correct');
+`).call({ assert, randomUUID });
+
+// ─── ADF expand → <details> round-trip ──────────────────────────────────────
+
+console.log('\n=== ADF expand → <details> round-trip ===');
+
+buildRunner(`
+  const md = '<details>\\n<summary>Click to expand</summary>\\n\\nHidden content\\n</details>';
+  const blocks = markdownToADFBlocks(md);
+  const reversed = adfBlocksToMarkdown(blocks);
+
+  this.assert(reversed.includes('<details>'), 'round-trip has <details>');
+  this.assert(reversed.includes('<summary>Click to expand</summary>'), 'round-trip has summary');
+  this.assert(reversed.includes('Hidden content'), 'round-trip has body content');
+  this.assert(reversed.includes('</details>'), 'round-trip has </details>');
+`).call({ assert, randomUUID });
+
+// ─── HTML comments stripped ─────────────────────────────────────────────────
+
+console.log('\n=== HTML comments stripped ===');
+
+buildRunner(`
+  const md = '<!-- This is a comment -->\\nVisible text\\n<!-- Another comment -->';
+  const blocks = markdownToADFBlocks(md);
+
+  this.assert(blocks.length === 1, 'produces 1 block (comment stripped)');
+  this.assert(blocks[0].type === 'paragraph', 'block is paragraph');
+  const text = blocks[0].content.map(n => n.text).join('');
+  this.assert(!text.includes('comment'), 'comment text not in output: ' + JSON.stringify(text));
+  this.assert(text.includes('Visible text'), 'visible text preserved');
+`).call({ assert, randomUUID });
+
+// ─── <details> with emoji in summary ────────────────────────────────────────
+
+console.log('\n=== <details> with HTML tags in summary ===');
+
+buildRunner(`
+  const md = '<details>\\n<summary><sub>Check the box</sub></summary>\\n\\nContent\\n</details>';
+  const blocks = markdownToADFBlocks(md);
+
+  this.assert(blocks[0].type === 'expand', 'block is expand');
+  this.assert(blocks[0].attrs.title === 'Check the box', 'HTML tags stripped from title');
+`).call({ assert, randomUUID });
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${'─'.repeat(50)}`);

@@ -121,7 +121,8 @@ const platformTeamUsers = {
   'wise-king-sullyman': '712020:5e90db8d-7d0b-4a09-a599-e81aa8b9ff00',
   thatblindgeye: '712020:6f63713c-d61e-49de-8f52-be48015241ed',
   kmcfaul: '712020:b46e5c4b-c4b6-4c9c-a998-7811631e4f81',
-  srambach: '557058:a502f956-47d6-4de9-85b0-75424d4014d0'
+  srambach: '557058:a502f956-47d6-4de9-85b0-75424d4014d0',
+  jcmill: '712020:e2a5129a-49ac-4813-a336-de270f523ba5'
 };
 
 const enablementTeamUsers = {
@@ -272,19 +273,19 @@ export const availableComponents = [
   {
     name: 'patternfly-mcp',
     owner: 'patternfly',
-  },*/
+  },
   {
     name: 'patternfly-org',
     owner: 'patternfly',
-  },/*
+  },
   {
     name: 'patternfly-quickstarts',
     owner: 'patternfly',
-  },
+  },*/
   {
     name: 'patternfly-react',
     owner: 'patternfly',
-  },
+  },/*
   {
     name: 'patternfly-react-seed',
     owner: 'patternfly',
@@ -405,7 +406,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
     };
     // Epic name field is required on Epic creation
     if (jiraIssueType.jiraName === 'Epic') {
-      jiraIssue.fields['customfield_12311141'] = title;
+      jiraIssue.fields['customfield_10011'] = title;
     }
   }
 
@@ -932,6 +933,12 @@ function adfBlocksToMarkdown(blocks, options = {}) {
         out.push(inner.split('\n').map((l) => '> ' + l).join('\n'));
         break;
       }
+      case 'expand': {
+        const title = node.attrs?.title || '';
+        const inner = adfBlocksToMarkdown(node.content || [], {});
+        out.push(`<details>\n<summary>${title}</summary>\n\n${inner}\n</details>`);
+        break;
+      }
       default:
         if (node.content) {
           out.push(adfBlocksToMarkdown(node.content, orderedIndex != null ? { orderedIndex: ord } : {}));
@@ -1015,6 +1022,8 @@ function parseMarkdownInline(text) {
 // Convert Markdown text to an array of ADF block nodes
 function markdownToADFBlocks(markdown) {
   if (!markdown) return [];
+  // Strip HTML comments (e.g. CodeRabbit metadata)
+  markdown = markdown.replace(/<!--[\s\S]*?-->/g, '');
   const blocks = [];
   const lines = markdown.split('\n');
   let i = 0;
@@ -1191,6 +1200,34 @@ function markdownToADFBlocks(markdown) {
       continue;
     }
 
+    // HTML <details>/<summary> → ADF expand (collapsible section)
+    if (/^\s*<details\b/i.test(line)) {
+      i++; // skip <details> line
+      let title = '';
+      // Look for <summary>...</summary>
+      if (i < lines.length && /<summary\b/i.test(lines[i])) {
+        const summaryMatch = lines[i].match(/<summary\b[^>]*>([\s\S]*?)<\/summary>/i);
+        if (summaryMatch) {
+          title = summaryMatch[1].replace(/<[^>]+>/g, '').trim();
+        }
+        i++;
+      }
+      // Collect body lines until </details>
+      const bodyLines = [];
+      while (i < lines.length && !/^\s*<\/details>/i.test(lines[i])) {
+        bodyLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) i++; // skip </details>
+      const bodyBlocks = markdownToADFBlocks(bodyLines.join('\n'));
+      blocks.push({
+        type: 'expand',
+        attrs: { title },
+        content: bodyBlocks.length ? bodyBlocks : [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }],
+      });
+      continue;
+    }
+
     // Regular paragraph: collect consecutive content lines
     const paraLines = [];
     while (
@@ -1204,7 +1241,8 @@ function markdownToADFBlocks(markdown) {
       !lines[i].match(/^\d+\. /) &&
       !lines[i].match(/^>\s?/) &&
       !/<img\b/i.test(lines[i]) &&
-      !/!\[[^\]]*\]\([^)]+\)/.test(lines[i])
+      !/!\[[^\]]*\]\([^)]+\)/.test(lines[i]) &&
+      !/<details\b/i.test(lines[i])
     ) {
       paraLines.push(lines[i]);
       i++;
