@@ -799,7 +799,7 @@ function taskItemContentToMarkdown(content) {
 // Convert ADF block(s) to Markdown (used for list items and doc content)
 function adfBlocksToMarkdown(blocks, options = {}) {
   if (!blocks || !Array.isArray(blocks)) return '';
-  const { orderedIndex } = options;
+  const { orderedIndex, taskDepth = 0 } = options;
   let ord = orderedIndex != null ? orderedIndex : 1;
   const out = [];
   for (const node of blocks) {
@@ -893,7 +893,8 @@ function adfBlocksToMarkdown(blocks, options = {}) {
         const checked = state === 'DONE' ? 'x' : ' ';
         const itemContent = node.content || [];
         const line = taskItemContentToMarkdown(itemContent);
-        if (line !== null) out.push(`- [${checked}] ${line}`);
+        const prefix = ' '.repeat(taskDepth * 2);
+        if (line !== null) out.push(`${prefix}- [${checked}] ${line}`);
         break;
       }
       case 'tasklist': {
@@ -905,10 +906,20 @@ function adfBlocksToMarkdown(blocks, options = {}) {
             const checked = state === 'DONE' ? 'x' : ' ';
             const itemContent = item.content || [];
             const line = taskItemContentToMarkdown(itemContent);
-            if (line !== null) out.push(`- [${checked}] ${line}`);
+            const prefix = ' '.repeat(taskDepth * 2);
+            if (line !== null) out.push(`${prefix}- [${checked}] ${line}`);
+          } else if (adfNodeType(item) === 'tasklist') {
+            out.push(adfBlocksToMarkdown([item], { taskDepth: taskDepth + 1 }));
           } else if (item.content) {
-            out.push(adfBlocksToMarkdown([item], {}));
+            out.push(adfBlocksToMarkdown([item], { taskDepth }));
           }
+        }
+        break;
+      }
+      case 'mediasingle': {
+        const mediaChild = (node.content || []).find((c) => adfNodeType(c) === 'media');
+        if (mediaChild?.attrs?.url) {
+          out.push(`![image](${mediaChild.attrs.url})`);
         }
         break;
       }
@@ -971,7 +982,7 @@ export function adfToMarkdown(adf, options = {}) {
 // Parse inline Markdown text into ADF inline content nodes
 function parseMarkdownInline(text) {
   const nodes = [];
-  const pattern = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(\[([^\]]+)\]\(([^)]+)\))/g;
+  const pattern = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(!\[([^\]]*)\]\(([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))/g;
   let lastIndex = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
@@ -986,8 +997,11 @@ function parseMarkdownInline(text) {
       nodes.push({ type: 'text', text: match[6], marks: [{ type: 'em' }] });
     } else if (match[7]) { // `code`
       nodes.push({ type: 'text', text: match[8], marks: [{ type: 'code' }] });
-    } else if (match[9]) { // [text](url)
-      nodes.push({ type: 'text', text: match[10], marks: [{ type: 'link', attrs: { href: match[11] } }] });
+    } else if (match[9]) { // ![alt](url) — inline image as linked text
+      const alt = match[10] || 'image';
+      nodes.push({ type: 'text', text: alt, marks: [{ type: 'link', attrs: { href: match[11] } }] });
+    } else if (match[12]) { // [text](url)
+      nodes.push({ type: 'text', text: match[13], marks: [{ type: 'link', attrs: { href: match[14] } }] });
     }
     lastIndex = pattern.lastIndex;
   }
@@ -1044,30 +1058,48 @@ function markdownToADFBlocks(markdown) {
     }
 
     // Task list: - [ ] or - [x] / - [X] (GitHub action items → Jira taskList/taskItem)
-    // Jira accepts taskList when taskItem has attrs.localId (empty or any value) and taskList has attrs.localId
-    const taskItemMatch = line.match(/^[-*] \[([ xX])\]\s+(.*)$/);
+    // Supports indented/nested checkboxes — builds nested taskList ADF nodes
+    const taskItemMatch = line.match(/^\s*[-*] \[([ xX])\]\s+(.*)$/);
     if (taskItemMatch) {
-      const items = [];
+      // Collect all consecutive task items with their indent levels
+      const taskLines = [];
       let idx = 0;
       while (i < lines.length) {
-        const m = lines[i].match(/^[-*] \[([ xX])\]\s+(.*)$/);
+        const m = lines[i].match(/^(\s*)[-*] \[([ xX])\]\s+(.*)$/);
         if (!m) break;
-        const state = m[1].toLowerCase() === 'x' ? 'DONE' : 'TODO';
-        const text = m[2];
-        const inlineContent = parseMarkdownInline(text);
-        items.push({
-          type: 'taskItem',
-          attrs: { localId: String(idx), state },
-          content: inlineContent.length ? inlineContent : [{ type: 'text', text: '' }],
-        });
+        const indent = Math.floor(m[1].length / 2);
+        const state = m[2].toLowerCase() === 'x' ? 'DONE' : 'TODO';
+        const text = m[3];
+        taskLines.push({ indent, state, text, id: idx });
         idx++;
         i++;
       }
-      blocks.push({
-        type: 'taskList',
-        attrs: { localId: '' },
-        content: items,
-      });
+      // Build nested taskList structure from flat list with indent levels
+      function buildTaskTree(items, startIdx, baseIndent) {
+        const list = { type: 'taskList', attrs: { localId: '' }, content: [] };
+        let j = startIdx;
+        while (j < items.length) {
+          const item = items[j];
+          if (item.indent < baseIndent) break;
+          if (item.indent === baseIndent) {
+            const inlineContent = parseMarkdownInline(item.text);
+            list.content.push({
+              type: 'taskItem',
+              attrs: { localId: String(item.id), state: item.state },
+              content: inlineContent.length ? inlineContent : [{ type: 'text', text: '' }],
+            });
+            j++;
+          } else {
+            // Nested items: build a child taskList
+            const nested = buildTaskTree(items, j, item.indent);
+            list.content.push(nested.list);
+            j = nested.nextIdx;
+          }
+        }
+        return { list, nextIdx: j };
+      }
+      const { list: rootTaskList } = buildTaskTree(taskLines, 0, taskLines[0].indent);
+      blocks.push(rootTaskList);
       continue;
     }
 
@@ -1120,6 +1152,43 @@ function markdownToADFBlocks(markdown) {
       continue;
     }
 
+    // HTML <img> tags or standalone markdown images → ADF mediaSingle
+    const imgTagRegex = /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi;
+    const mdImageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    if (imgTagRegex.test(line) || mdImageRegex.test(line)) {
+      imgTagRegex.lastIndex = 0;
+      mdImageRegex.lastIndex = 0;
+      let remaining = line;
+      const mediaNodes = [];
+      // Extract <img> tags
+      let imgMatch;
+      while ((imgMatch = imgTagRegex.exec(line)) !== null) {
+        mediaNodes.push({
+          type: 'mediaSingle',
+          attrs: { layout: 'center' },
+          content: [{ type: 'media', attrs: { type: 'external', url: imgMatch[1] } }],
+        });
+        remaining = remaining.replace(imgMatch[0], '');
+      }
+      // Extract ![alt](url) markdown images
+      let mdMatch;
+      while ((mdMatch = mdImageRegex.exec(line)) !== null) {
+        mediaNodes.push({
+          type: 'mediaSingle',
+          attrs: { layout: 'center' },
+          content: [{ type: 'media', attrs: { type: 'external', url: mdMatch[2] } }],
+        });
+        remaining = remaining.replace(mdMatch[0], '');
+      }
+      const trimmed = remaining.trim();
+      if (trimmed) {
+        blocks.push({ type: 'paragraph', content: parseMarkdownInline(trimmed) });
+      }
+      mediaNodes.forEach((node) => blocks.push(node));
+      i++;
+      continue;
+    }
+
     // Blank line: skip
     if (line.trim() === '') {
       i++;
@@ -1135,8 +1204,11 @@ function markdownToADFBlocks(markdown) {
       !lines[i].match(/^(\s*[-*_]){3,}\s*$/) &&
       !lines[i].startsWith('```') &&
       !lines[i].match(/^[-*] /) &&
+      !lines[i].match(/^\s*[-*] \[([ xX])\]/) &&
       !lines[i].match(/^\d+\. /) &&
-      !lines[i].match(/^>\s?/)
+      !lines[i].match(/^>\s?/) &&
+      !/<img\b/i.test(lines[i]) &&
+      !/!\[[^\]]*\]\([^)]+\)/.test(lines[i])
     ) {
       paraLines.push(lines[i]);
       i++;
