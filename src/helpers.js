@@ -247,11 +247,11 @@ export const availableComponents = [
   {
     name: 'patternfly-cli',
     owner: 'patternfly',
-  },*/
+  },
   {
     name: 'patternfly-design',
     owner: 'patternfly',
-  },/*
+  },
   {
     name: 'patternfly-design-kit',
     owner: 'patternfly',
@@ -271,11 +271,11 @@ export const availableComponents = [
   {
     name: 'patternfly-mcp',
     owner: 'patternfly',
-  },
+  },*/
   {
     name: 'patternfly-org',
     owner: 'patternfly',
-  },
+  },/*
   {
     name: 'patternfly-quickstarts',
     owner: 'patternfly',

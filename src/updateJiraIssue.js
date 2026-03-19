@@ -170,19 +170,19 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
         reopened: false,
       },
     };
-
+    debugger;
     // Check if Jira is closed and close GitHub issue early (before any operations that update GitHub timestamp)
     const closedHandled = await closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue);
     if (closedHandled) {
       syncSummary.jiraToGitHub.closed = true;
     }
-    
+    debugger;
     // Check if Jira is reopened and reopen GitHub issue early (before any operations that update GitHub timestamp)
     const reopenedHandled = await reopenGitHubIssueIfJiraReopened(jiraIssue, githubIssue);
     if (reopenedHandled) {
       syncSummary.jiraToGitHub.reopened = true;
     }
-
+    debugger;
     // Check timestamps to determine if we should sync from GitHub to Jira
     const shouldSyncGitHubToJira = shouldSyncFromGitHub(githubIssue, jiraIssue);
     if (!shouldSyncGitHubToJira) {
@@ -193,8 +193,6 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       );
     } else {
       // GitHub is newer, sync GitHub → Jira
-      syncSummary.githubToJira = true;
-      
       const jiraIssueData = buildJiraIssueData(githubIssue, true);
       // If issue is a sub-task, keep issue type as sub-task
       // Avoids next GH sync resetting sub-task issuetype
@@ -233,17 +231,18 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       const hadGitHubAssignee = githubIssue.assignees?.nodes?.length > 0;
       const assigneeChanged = !hadAssignee && hadGitHubAssignee;
 
-      await editJiraIssue(jiraIssue.key, jiraIssueData);
-
-      // Log what was synced
       const changes = [];
       if (titleChanged) changes.push('title');
       if (descriptionChanged) changes.push('description');
       if (assigneeChanged) changes.push('assignee');
-      
-      console.log(
-        `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
-      );
+
+      if (changes.length > 0) {
+        await editJiraIssue(jiraIssue.key, jiraIssueData);
+        syncSummary.githubToJira = true;
+        console.log(
+          `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
+        );
+      }
 
       // Sync comments
       if (githubIssue.comments.totalCount > 0) {
