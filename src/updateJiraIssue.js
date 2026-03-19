@@ -20,6 +20,7 @@ async function findChildIssues(jiraIssueKey) {
     const response = await jiraClient.get('/rest/api/3/search/jql', {
       params: {
         jql: `parent = ${jiraIssueKey}`,
+        maxResults: 250,
         fields: 'key,description,updated,status',
       },
     });
