@@ -210,6 +210,7 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       // (e.g. blank lines added after headings, leading spaces stripped by Jira).
       const normalizeForCompare = (text) => String(text || '')
         .replace(/\r\n/g, '\n')
+        .replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi, '![image]($1)')  // normalize HTML img to markdown (ADF roundtrip)
         .replace(/[ \t]+$/gm, '')
         .replace(/^[ \t]+/gm, '')
         .replace(/\n{3,}/g, '\n\n')

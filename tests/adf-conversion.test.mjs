@@ -8,6 +8,7 @@
  * Run: node tests/adf-conversion.test.mjs
  */
 import { readFileSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -34,8 +35,9 @@ const fnNames = [
 const allCode = fnNames.map((n) => extractFn(n)).join('\n\n');
 
 // Build a runner that defines all helpers in a shared scope
+// randomUUID is injected via `this` since Function constructor has no module scope
 function buildRunner(testBody) {
-  return new Function(`${allCode}\n\n${testBody}`);
+  return new Function(`const randomUUID = this.randomUUID;\n${allCode}\n\n${testBody}`);
 }
 
 let passed = 0;
@@ -76,7 +78,25 @@ buildRunner(`
   this.assert(doubleNested.content[0].content[0].text === 'Double nested', 'double-nested text correct');
 
   this.assert(root.content[3].content[0].text === 'Another top level', 'last top-level item text correct');
-`).call({ assert });
+`).call({ assert, randomUUID });
+
+// ─── Nested Checkboxes: UUID localIds ────────────────────────────────────────
+
+console.log('\n=== Nested Checkboxes: UUID localIds ===');
+
+buildRunner(`
+  const md = '- [ ] Top\\n  - [ ] Nested';
+  const blocks = markdownToADFBlocks(md);
+  const root = blocks[0];
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  this.assert(uuidRegex.test(root.attrs.localId), 'root taskList has UUID localId: ' + root.attrs.localId);
+  this.assert(uuidRegex.test(root.content[0].attrs.localId), 'taskItem has UUID localId: ' + root.content[0].attrs.localId);
+
+  const nestedList = root.content[1];
+  this.assert(uuidRegex.test(nestedList.attrs.localId), 'nested taskList has UUID localId: ' + nestedList.attrs.localId);
+  this.assert(nestedList.attrs.localId !== root.attrs.localId, 'nested list localId differs from root');
+`).call({ assert, randomUUID });
 
 // ─── Nested Checkboxes: Jira → GitHub (round-trip) ──────────────────────────
 
@@ -92,7 +112,7 @@ buildRunner(`
   this.assert(lines[1] === '  - [ ] Nested', 'indent preserved: ' + JSON.stringify(lines[1]));
   this.assert(lines[2] === '    - [x] Deep nested', 'deep indent preserved: ' + JSON.stringify(lines[2]));
   this.assert(lines[3] === '- [x] Done', 'back to top level: ' + JSON.stringify(lines[3]));
-`).call({ assert });
+`).call({ assert, randomUUID });
 
 // ─── HTML <img> tag: GitHub → Jira ──────────────────────────────────────────
 
@@ -107,7 +127,7 @@ buildRunner(`
   this.assert(blocks[0].content[0].type === 'media', 'child is media node');
   this.assert(blocks[0].content[0].attrs.type === 'external', 'media type is external');
   this.assert(blocks[0].content[0].attrs.url === 'https://github.com/user-attachments/assets/example.png', 'URL extracted correctly');
-`).call({ assert });
+`).call({ assert, randomUUID });
 
 // ─── Non-self-closing <img> tag ─────────────────────────────────────────────
 
@@ -120,7 +140,7 @@ buildRunner(`
   this.assert(blocks.length === 1, 'produces exactly 1 block');
   this.assert(blocks[0].type === 'mediaSingle', 'block is mediaSingle');
   this.assert(blocks[0].content[0].attrs.url === 'https://example.com/pic.png', 'URL correct');
-`).call({ assert });
+`).call({ assert, randomUUID });
 
 // ─── Markdown image: GitHub → Jira ──────────────────────────────────────────
 
@@ -133,7 +153,7 @@ buildRunner(`
   this.assert(blocks.length === 1, 'produces exactly 1 block');
   this.assert(blocks[0].type === 'mediaSingle', 'block is mediaSingle');
   this.assert(blocks[0].content[0].attrs.url === 'https://example.com/image.png', 'URL correct');
-`).call({ assert });
+`).call({ assert, randomUUID });
 
 // ─── Image: Jira → GitHub (round-trip) ──────────────────────────────────────
 
@@ -145,7 +165,7 @@ buildRunner(`
   const reversed = adfBlocksToMarkdown(blocks);
 
   this.assert(reversed.includes('![image](https://example.com/image.png)'), 'round-trip produces markdown image: ' + JSON.stringify(reversed));
-`).call({ assert });
+`).call({ assert, randomUUID });
 
 // ─── Mixed content: text + img on same line ─────────────────────────────────
 
@@ -158,7 +178,7 @@ buildRunner(`
   this.assert(blocks.length === 2, 'produces 2 blocks (paragraph + mediaSingle)');
   this.assert(blocks[0].type === 'paragraph', 'first block is paragraph with remaining text');
   this.assert(blocks[1].type === 'mediaSingle', 'second block is mediaSingle');
-`).call({ assert });
+`).call({ assert, randomUUID });
 
 // ─── Indented checkboxes don't become paragraph text ────────────────────────
 
@@ -171,7 +191,7 @@ buildRunner(`
   this.assert(blocks.length === 2, 'produces 2 blocks (paragraph + taskList)');
   this.assert(blocks[0].type === 'paragraph', 'first is paragraph');
   this.assert(blocks[1].type === 'taskList', 'second is taskList');
-`).call({ assert });
+`).call({ assert, randomUUID });
 
 // ─── Summary ────────────────────────────────────────────────────────────────
 

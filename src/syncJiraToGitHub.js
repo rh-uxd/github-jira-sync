@@ -105,6 +105,7 @@ function normalizeBody(body) {
   if (body == null) return '';
   return String(body)
     .replace(/\r\n/g, '\n')
+    .replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi, '![image]($1)')  // normalize HTML img to markdown (ADF roundtrip)
     .replace(/[ \t]+$/gm, '')     // strip trailing whitespace per line
     .replace(/^[ \t]+/gm, '')     // strip leading whitespace (Jira strips leading spaces from ADF text nodes)
     .replace(/\n{3,}/g, '\n\n')   // collapse excess blank lines to max one

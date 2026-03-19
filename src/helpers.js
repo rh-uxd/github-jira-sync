@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 import { errorCollector } from './index.js';
 import j2m from 'jira2md';
 
@@ -1058,25 +1059,21 @@ function markdownToADFBlocks(markdown) {
     }
 
     // Task list: - [ ] or - [x] / - [X] (GitHub action items → Jira taskList/taskItem)
-    // Supports indented/nested checkboxes — builds nested taskList ADF nodes
+    // Builds nested taskList ADF nodes with UUID localIds (required by Jira for nesting)
     const taskItemMatch = line.match(/^\s*[-*] \[([ xX])\]\s+(.*)$/);
     if (taskItemMatch) {
-      // Collect all consecutive task items with their indent levels
       const taskLines = [];
-      let idx = 0;
       while (i < lines.length) {
         const m = lines[i].match(/^(\s*)[-*] \[([ xX])\]\s+(.*)$/);
         if (!m) break;
         const indent = Math.floor(m[1].length / 2);
         const state = m[2].toLowerCase() === 'x' ? 'DONE' : 'TODO';
         const text = m[3];
-        taskLines.push({ indent, state, text, id: idx });
-        idx++;
+        taskLines.push({ indent, state, text });
         i++;
       }
-      // Build nested taskList structure from flat list with indent levels
       function buildTaskTree(items, startIdx, baseIndent) {
-        const list = { type: 'taskList', attrs: { localId: '' }, content: [] };
+        const list = { type: 'taskList', attrs: { localId: randomUUID() }, content: [] };
         let j = startIdx;
         while (j < items.length) {
           const item = items[j];
@@ -1085,12 +1082,11 @@ function markdownToADFBlocks(markdown) {
             const inlineContent = parseMarkdownInline(item.text);
             list.content.push({
               type: 'taskItem',
-              attrs: { localId: String(item.id), state: item.state },
+              attrs: { localId: randomUUID(), state: item.state },
               content: inlineContent.length ? inlineContent : [{ type: 'text', text: '' }],
             });
             j++;
           } else {
-            // Nested items: build a child taskList
             const nested = buildTaskTree(items, j, item.indent);
             list.content.push(nested.list);
             j = nested.nextIdx;
