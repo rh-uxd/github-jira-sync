@@ -1007,7 +1007,7 @@ function markdownToADFBlocks(markdown) {
     const line = lines[i];
 
     // Heading: # text
-    const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)/);
     if (headingMatch) {
       blocks.push({
         type: 'heading',
@@ -1150,6 +1150,9 @@ function markdownToADFBlocks(markdown) {
         }
       });
       blocks.push({ type: 'paragraph', content });
+    } else {
+      // Safety: skip unrecognized lines to prevent infinite loops
+      i++;
     }
   }
   return blocks;

@@ -170,19 +170,17 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
         reopened: false,
       },
     };
-    debugger;
+
     // Check if Jira is closed and close GitHub issue early (before any operations that update GitHub timestamp)
     const closedHandled = await closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue);
     if (closedHandled) {
       syncSummary.jiraToGitHub.closed = true;
     }
-    debugger;
     // Check if Jira is reopened and reopen GitHub issue early (before any operations that update GitHub timestamp)
     const reopenedHandled = await reopenGitHubIssueIfJiraReopened(jiraIssue, githubIssue);
     if (reopenedHandled) {
       syncSummary.jiraToGitHub.reopened = true;
     }
-    debugger;
     // Check timestamps to determine if we should sync from GitHub to Jira
     const shouldSyncGitHubToJira = shouldSyncFromGitHub(githubIssue, jiraIssue);
     if (!shouldSyncGitHubToJira) {
