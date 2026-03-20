@@ -476,21 +476,13 @@ export async function checkAndHandleArchivedJiraIssue(githubIssue) {
 
     const { owner, repo, issueNumber } = parsed;
 
+    // Use the state from the already-fetched GraphQL data instead of a separate REST call
+    if (githubIssue.state === 'CLOSED') {
+      console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} is already closed (Jira ${jiraKey} is archived)`);
+      return true; // Already handled
+    }
+
     try {
-      // Get GitHub issue to check if it's already closed
-      await shortDelay();
-      const octokitInstance = getOctokitForOwner(owner);
-      const { data: ghIssue } = await octokitInstance.rest.issues.get({
-        owner,
-        repo,
-        issue_number: issueNumber,
-      });
-
-      if (ghIssue.state === 'closed') {
-        console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} is already closed (Jira ${jiraKey} is archived)`);
-        return true; // Already handled
-      }
-
       // Close the GitHub issue
       await closeGitHubIssue(owner, repo, issueNumber);
       await addGitHubIssueComment(
@@ -502,7 +494,7 @@ export async function checkAndHandleArchivedJiraIssue(githubIssue) {
       // Add Jira link to GitHub issue body if not already present
       const githubIssueForLink = {
         url: githubIssue.url,
-        body: ghIssue.body || '',
+        body: githubIssue.body || '',
       };
       await addJiraLinkToGitHub(jiraKey, githubIssueForLink);
       console.log(
@@ -530,13 +522,32 @@ export async function checkAndHandleArchivedJiraIssue(githubIssue) {
   }
 }
 
+// Build a lightweight batched GraphQL query to check issue state and updatedAt
+function buildBatchedIssueStateQuery(issueRequests) {
+  const fragments = issueRequests.map(({ alias, owner, repo, issueNumber }) => `
+    ${alias}: repository(owner: "${owner}", name: "${repo}") {
+      issue(number: ${issueNumber}) {
+        number
+        state
+        url
+        body
+        updatedAt
+      }
+    }`);
+
+  return `query BatchedIssueState { ${fragments.join('\n')} }`;
+}
+
 // Close GitHub issues for closed Jira issues
 export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
   try {
+    // Phase 1: Collect candidates and run Jira duplicate checks
+    const candidates = []; // { jiraIssue, parsed, githubUrl, alias }
+
     for (const jiraIssue of closedJiraIssues) {
       const githubUrl = extractUpstreamUrl(jiraIssue.fields.description);
       if (!githubUrl) {
-        continue; // Skip if no GitHub URL
+        continue;
       }
 
       const parsed = parseGitHubUrl(githubUrl);
@@ -577,36 +588,77 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
         continue;
       }
 
+      const alias = `repo_${candidates.length}`;
+      candidates.push({ jiraIssue, parsed, githubUrl, alias });
+    }
+
+    if (candidates.length === 0) {
+      return;
+    }
+
+    // Phase 2: Batch fetch GitHub issue states via GraphQL
+    const BATCH_SIZE = 50;
+    const githubIssuesByAlias = new Map();
+
+    for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+      const batch = candidates.slice(i, i + BATCH_SIZE);
+      const issueRequests = batch.map(({ alias, parsed }) => ({
+        alias,
+        owner: parsed.owner,
+        repo: parsed.repo,
+        issueNumber: parsed.issueNumber,
+      }));
+      const query = buildBatchedIssueStateQuery(issueRequests);
+      const batchOwner = issueRequests[0].owner;
+
       try {
-        // Get GitHub issue to check if it's already closed
-        await shortDelay();
-        const octokitInstance = getOctokitForOwner(owner);
-        const { data: ghIssue } = await octokitInstance.rest.issues.get({
-          owner,
-          repo,
-          issue_number: issueNumber,
-        });
-
-        if (ghIssue.state === 'closed') {
-          console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} is already closed`);
-          continue;
+        const response = await executeGraphQLQuery(query, {}, batchOwner);
+        if (response) {
+          for (const req of issueRequests) {
+            const issue = response[req.alias]?.issue;
+            if (issue) {
+              githubIssuesByAlias.set(req.alias, issue);
+            }
+          }
         }
+      } catch (error) {
+        errorCollector.addError(
+          `SYNCJIRATOGITHUB: Error batch-fetching GitHub issue states (batch ${Math.floor(i / BATCH_SIZE) + 1})`,
+          error
+        );
+      }
+    }
 
-        // Check timestamps to determine if we should sync from Jira
-        // GitHub REST API returns updated_at, convert to updatedAt for consistency
-        const githubUpdated = ghIssue.updated_at;
-        const jiraUpdated = jiraIssue.fields?.updated;
+    console.log(`  Fetched ${githubIssuesByAlias.size}/${candidates.length} GitHub issue states in ${Math.ceil(candidates.length / BATCH_SIZE)} batch(es)`);
 
-        // Create a minimal GitHub issue object for comparison (using updatedAt field name)
-        const githubIssueForComparison = { updatedAt: githubUpdated };
+    // Phase 3: Process each candidate with its pre-fetched GitHub issue state
+    for (const { jiraIssue, parsed, githubUrl, alias } of candidates) {
+      const { owner, repo, issueNumber } = parsed;
+      const ghIssue = githubIssuesByAlias.get(alias);
 
-        if (!shouldSyncFromJira(githubIssueForComparison, jiraIssue)) {
-          console.log(
-            `  - Skipping close: GitHub issue ${owner}/${repo}#${issueNumber} was updated more recently (${githubUpdated}) than Jira issue ${jiraIssue.key} (${jiraUpdated})`
-          );
-          continue;
-        }
+      if (!ghIssue) {
+        console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} not found, skipping`);
+        continue;
+      }
 
+      if (ghIssue.state === 'CLOSED') {
+        console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} is already closed`);
+        continue;
+      }
+
+      // Check timestamps to determine if we should sync from Jira
+      const githubUpdated = ghIssue.updatedAt;
+      const jiraUpdated = jiraIssue.fields?.updated;
+      const githubIssueForComparison = { updatedAt: githubUpdated };
+
+      if (!shouldSyncFromJira(githubIssueForComparison, jiraIssue)) {
+        console.log(
+          `  - Skipping close: GitHub issue ${owner}/${repo}#${issueNumber} was updated more recently (${githubUpdated}) than Jira issue ${jiraIssue.key} (${jiraUpdated})`
+        );
+        continue;
+      }
+
+      try {
         // Close the issue with a comment marker
         await closeGitHubIssue(owner, repo, issueNumber);
         await addGitHubIssueComment(
