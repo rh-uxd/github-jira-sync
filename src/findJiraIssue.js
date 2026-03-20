@@ -1,4 +1,4 @@
-import { jiraClient, delay, extractTextFromADF } from './helpers.js';
+import { jiraClient, shortDelay, extractTextFromADF } from './helpers.js';
 import { jiraIssues, errorCollector } from './index.js';
 
 const isUpstreamUrlMatch = (jiraDescription, ghIssueLink) => {
@@ -35,7 +35,7 @@ const fetchJiraIssue = async (githubIssueLink) => {
   // https://support.atlassian.com/jira-software-cloud/docs/search-for-issues-using-the-text-field/#Exact-searches--phrases-
   const jql = `project = PF AND description ~ "\\"Upstream URL: ${githubIssueLink}\\""`;
   try {
-    await delay();
+    await shortDelay();
     const response = await jiraClient.get('/rest/api/3/search/jql', {
       params: {
         jql,

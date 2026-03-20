@@ -103,6 +103,10 @@ export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
 export const delay = (ms = 1000) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+// Shorter delay for read-only GitHub REST calls (rate limit is 5,000/hr)
+export const shortDelay = (ms = 250) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 export const convertMarkdownToJira = (str) => {
   // Custom image fix - extracts img src and wraps in ! 
   let jiraMd = str.replaceAll(
@@ -414,8 +418,11 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
 };
 
 // Helper function to execute GraphQL queries
+// GraphQL uses a point-based rate limit (5,000 points/hr), not request-based,
+// so we use a short delay instead of the full 1-second delay used for REST writes.
 export async function executeGraphQLQuery(query, variables, owner = null) {
   try {
+    await shortDelay();
     // Extract owner from variables if not provided directly
     const ownerToUse = owner || variables?.owner || 'patternfly';
     const octokitInstance = getOctokitForOwner(ownerToUse);
@@ -670,9 +677,9 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
       hasNextPage = pageInfo.hasNextPage;
       cursor = pageInfo.endCursor;
 
-      // Add a delay between requests to avoid rate limiting
+      // Add a short delay between paginated reads to avoid secondary rate limiting
       if (hasNextPage) {
-        await delay(1000);
+        await shortDelay();
       }
 
       // Reset retry count on successful request
@@ -1358,7 +1365,7 @@ export function extractJiraKeyFromText(text) {
 // Fetch a specific Jira issue by key (works even if archived)
 export async function fetchJiraIssueByKey(issueKey) {
   try {
-    await delay();
+    await shortDelay();
     const response = await jiraClient.get(`/rest/api/3/issue/${issueKey}`, {
       params: {
         fields: 'key,id,description,status,assignee,issuetype,updated,summary,components,archiveddate',
@@ -1543,8 +1550,8 @@ export async function closeGitHubIssue(owner, repo, issueNumber) {
 
 export async function syncCommentsToJira(jiraIssueKey, githubComments) {
   try {
-    // Get existing comments from Jira
-    await delay();
+    // Get existing comments from Jira (read-only, use shorter delay)
+    await shortDelay();
     const { data: jiraComments } = await jiraClient.get(
       `/rest/api/3/issue/${jiraIssueKey}/comment`
     );
