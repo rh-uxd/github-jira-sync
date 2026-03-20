@@ -208,7 +208,7 @@ async function syncIssues(owner, repo, since, direction = 'both') {
       // Process GitHub issues
       for (const [index, issue] of githubIssues.entries()) {
         // Skip if the issue is a pull request (GraphQL doesn't return pull requests) or an Initiative
-        if (issue.pull_request || issue?.issueType?.name === 'Initiative') {
+        if (issue.pull_request || issue?.issueType?.name === 'Initiative' || issue.url !== 'https://github.com/patternfly/patternfly/issues/4339') {
           console.log(`(${index + 1}/${githubIssues.length}) Skipping ${issue.pull_request ? 'pull request' : 'Initiative'} #${ issue.number}`);
           continue;
         }

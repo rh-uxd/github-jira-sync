@@ -214,7 +214,7 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
-  /*{
+  {
     name: 'AI-infra-ui-components',
     owner: 'patternfly',
   },
@@ -281,11 +281,11 @@ export const availableComponents = [
   {
     name: 'patternfly-quickstarts',
     owner: 'patternfly',
-  },*/
+  },
   {
     name: 'patternfly-react',
     owner: 'patternfly',
-  },/*
+  },
   {
     name: 'patternfly-react-seed',
     owner: 'patternfly',
@@ -337,7 +337,7 @@ export const availableComponents = [
   {
     name: 'jira-weekly-report',
     owner: 'rh-uxd'
-  }*/
+  }
 ];
 
 export const getJiraComponent = (repoName) =>
@@ -1024,6 +1024,9 @@ function markdownToADFBlocks(markdown) {
   if (!markdown) return [];
   // Strip HTML comments (e.g. CodeRabbit metadata)
   markdown = markdown.replace(/<!--[\s\S]*?-->/g, '');
+  // Strip HTML tags with no ADF equivalent
+  markdown = markdown.replace(/<\/?blockquote>/gi, '');
+  markdown = markdown.replace(/<br\s*\/?>/gi, '\n');
   const blocks = [];
   const lines = markdown.split('\n');
   let i = 0;
@@ -1203,12 +1206,13 @@ function markdownToADFBlocks(markdown) {
     // HTML <details>/<summary> → ADF expand (collapsible section)
     if (/^\s*<details\b/i.test(line)) {
       i++; // skip <details> line
-      let title = '';
+      let title = 'Details';
       // Look for <summary>...</summary>
       if (i < lines.length && /<summary\b/i.test(lines[i])) {
         const summaryMatch = lines[i].match(/<summary\b[^>]*>([\s\S]*?)<\/summary>/i);
         if (summaryMatch) {
-          title = summaryMatch[1].replace(/<[^>]+>/g, '').trim();
+          const extracted = summaryMatch[1].replace(/<[^>]+>/g, '').trim();
+          if (extracted) title = extracted;
         }
         i++;
       }

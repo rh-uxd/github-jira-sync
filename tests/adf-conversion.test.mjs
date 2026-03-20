@@ -264,6 +264,33 @@ buildRunner(`
   this.assert(blocks[0].attrs.title === 'Check the box', 'HTML tags stripped from title');
 `).call({ assert, randomUUID });
 
+// ─── <details> without <summary> ─────────────────────────────────────────────
+
+console.log('\n=== <details> without <summary> ===');
+
+buildRunner(`
+  const md = '<details>\\nSome hidden content\\n</details>';
+  const blocks = markdownToADFBlocks(md);
+
+  this.assert(blocks.length === 1, 'produces 1 block');
+  this.assert(blocks[0].type === 'expand', 'block is expand');
+  this.assert(blocks[0].attrs.title === 'Details', 'fallback title is Details');
+`).call({ assert, randomUUID });
+
+// ─── <blockquote> and <br> tags stripped ─────────────────────────────────────
+
+console.log('\n=== <blockquote> and <br> tags stripped ===');
+
+buildRunner(`
+  const md = 'Line one<br>Line two\\n<blockquote>\\nQuoted text\\n</blockquote>';
+  const blocks = markdownToADFBlocks(md);
+
+  const allText = blocks.map(b => (b.content || []).map(n => n.text || '').join('')).join(' ');
+  this.assert(!allText.includes('<blockquote>'), 'blockquote tag stripped');
+  this.assert(!allText.includes('<br>'), 'br tag stripped');
+  this.assert(allText.includes('Quoted text'), 'content preserved');
+`).call({ assert, randomUUID });
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${'─'.repeat(50)}`);
