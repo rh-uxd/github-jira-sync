@@ -1,4 +1,4 @@
-import { jiraClient, delay } from './helpers.js';
+import { jiraClient, delay, extractTextFromADF } from './helpers.js';
 import { jiraIssues, errorCollector } from './index.js';
 
 const isUpstreamUrlMatch = (jiraDescription, ghIssueLink) => {
@@ -12,8 +12,9 @@ const isUpstreamUrlMatch = (jiraDescription, ghIssueLink) => {
   // Create a RegExp object from the dynamically constructed string
   const regex = new RegExp(regexPattern);
 
-  // Test the regex against the input string
-  return regex.test(jiraDescription);
+  // Extract plain text from ADF (Jira Cloud v3 returns description as ADF object)
+  const descriptionText = extractTextFromADF(jiraDescription);
+  return regex.test(descriptionText);
 };
 
 export async function findJiraIssue(githubIssueLink) {
@@ -35,10 +36,10 @@ const fetchJiraIssue = async (githubIssueLink) => {
   const jql = `project = PF AND description ~ "\\"Upstream URL: ${githubIssueLink}\\""`;
   try {
     await delay();
-    const response = await jiraClient.get('/rest/api/2/search', {
+    const response = await jiraClient.get('/rest/api/3/search/jql', {
       params: {
         jql,
-        fields: 'key,id,description,status,assignee,issuetype,updated',
+        fields: 'key,id,description,status,assignee,issuetype,updated,summary',
       },
     });
     // Check against regex to filter out any substring matches
@@ -47,7 +48,6 @@ const fetchJiraIssue = async (githubIssueLink) => {
         isUpstreamUrlMatch(issue.fields.description, githubIssueLink)
       ) || null;
     let foundIssue = null;
-
     if (!foundIssues.length) {
       // No Jira match found
       console.log('No Jira issue found for GitHub issue:', githubIssueLink);

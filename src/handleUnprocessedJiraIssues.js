@@ -3,6 +3,7 @@ import {
   delay,
   executeGraphQLQuery,
   GET_ISSUE_DETAILS,
+  extractTextFromADF,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { errorCollector } from './index.js';
@@ -17,7 +18,7 @@ export async function handleUnprocessedJiraIssues(unprocessedJiraIssues, repo) {
   for (const jiraIssue of unprocessedJiraIssues) {
     // Extract GitHub issue number from description
     console.log(jiraIssue.key);
-    const githubIdMatch = jiraIssue.fields.description
+    const githubIdMatch = extractTextFromADF(jiraIssue.fields.description)
       .match(/Upstream URL: (.+)/)?.[1]
       ?.split('/')
       ?.pop();

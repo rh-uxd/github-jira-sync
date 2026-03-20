@@ -4,9 +4,10 @@ import {
   getJiraComponent,
   createNewJiraIssue,
   syncCommentsToJira,
-  convertMarkdownToJira,
+  buildDescriptionADF,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
+import { addJiraLinkToGitHub } from './syncJiraToGitHub.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { errorCollector } from './index.js';
 
@@ -30,11 +31,12 @@ export async function createChildIssues(
           key: 'PF',
         },
         summary: subIssue.title,
-        description: `${subIssue?.body ? convertMarkdownToJira(subIssue.body) : ''}\n\n----\n\nGH Issue ${
-          subIssue.number
-        }\nUpstream URL: ${subIssue.url}\nReporter: ${
-          subIssue?.author?.login || ''
-        }\nAssignees: ${assignees}`,
+        description: buildDescriptionADF(subIssue.body, {
+          number: subIssue.number,
+          url: subIssue.url,
+          reporter: subIssue?.author?.login || '',
+          assignees,
+        }),
       },
     };
 
@@ -45,7 +47,7 @@ export async function createChildIssues(
 
     if (isEpic) {
       // Parent epic cannot contain child epic
-      if (jiraIssueType.id === 16) {
+      if (jiraIssueType.id === 10000) {
         console.error(' - !! - Epic child issue cannot be an Epic');
         return;
       }
@@ -54,11 +56,11 @@ export async function createChildIssues(
       childIssue.fields.issuetype = {
         id: jiraIssueType.id,
       };
-      childIssue.fields['customfield_12311140'] = parentJiraKey;
+      childIssue.fields['customfield_10014'] = parentJiraKey;
     } else {
       // For non-epic children, must be sub-tasks
       childIssue.fields.issuetype = {
-        id: '5',
+        id: '10015',
       };
       childIssue.fields.parent = {
         key: parentJiraKey,
@@ -67,6 +69,8 @@ export async function createChildIssues(
 
     // Create new Jira issue & add remote link to GitHub issue
     const newJiraKey = await createNewJiraIssue(childIssue, subIssue);
+    // Add Jira link to GitHub issue body immediately so it appears on the first sync
+    await addJiraLinkToGitHub(newJiraKey, subIssue);
     // If GH issue is closed, transition Jira issue to closed (cannot create a closed issue)
     if (subIssue.state === 'CLOSED') {
       await transitionJiraIssue(newJiraKey, 'Closed');
@@ -93,6 +97,8 @@ export async function createJiraIssue(githubIssue) {
   try {
     const jiraIssue = buildJiraIssueData(githubIssue);
     const newJiraKey = await createNewJiraIssue(jiraIssue, githubIssue);
+    // Add Jira link to GitHub issue body immediately so it appears on the first sync
+    await addJiraLinkToGitHub(newJiraKey, githubIssue);
 
     // If GH issue is closed, transition Jira issue to closed
     if (githubIssue.state === 'CLOSED') {
@@ -106,7 +112,7 @@ export async function createJiraIssue(githubIssue) {
 
     // Create child issues for any sub-issues
     if (githubIssue.subIssues.totalCount > 0) {
-      const isEpic = jiraIssue.fields.issuetype.id === '16';
+      const isEpic = jiraIssue.fields.issuetype.id === '10000';
       await updateChildIssues(newJiraKey, githubIssue, isEpic);
     }
 

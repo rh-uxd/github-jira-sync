@@ -6,7 +6,7 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
     // First, get available transitions for the issue
     await delay();
     const { data: transitions } = await jiraClient.get(
-      `/rest/api/2/issue/${jiraIssueKey}/transitions`
+      `/rest/api/3/issue/${jiraIssueKey}/transitions`
     );
 
     // Find the appropriate transition based on target state
@@ -16,7 +16,7 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
 
     if (transition) {
       await delay();
-      await jiraClient.post(`/rest/api/2/issue/${jiraIssueKey}/transitions`, {
+      await jiraClient.post(`/rest/api/3/issue/${jiraIssueKey}/transitions`, {
         transition: {
           id: transition.id,
         },
