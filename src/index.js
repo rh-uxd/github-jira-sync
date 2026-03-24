@@ -164,7 +164,7 @@ const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
     params: {
       jql: `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
       maxResults: 1000,
-      fields: 'key,id,summary,description,status,assignee,issuetype,reporter,components,updated',
+      fields: 'key,id,summary,description,status,resolution,assignee,issuetype,reporter,components,updated',
     },
   });
   const allIssues = response?.data?.issues || [];

@@ -8,12 +8,13 @@ import {
   shouldSyncFromGitHub,
   extractTextFromADF,
   adfToMarkdown,
+  executeGraphQLQuery,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { errorCollector } from './index.js';
-import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleAndDescriptionToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened } from './syncJiraToGitHub.js';
+import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleAndDescriptionToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened, parseGitHubUrl, buildBatchedIssueStateQuery } from './syncJiraToGitHub.js';
 
 async function findChildIssues(jiraIssueKey) {
   try {
@@ -124,25 +125,53 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
       );
     }
 
-    // Close any remaining Jira child issues that no longer exist in GitHub,
-    // but ONLY if we fetched all sub-issues from GitHub. If the response was
-    // truncated by pagination, unmatched Jira children may simply be beyond
-    // the page limit — closing them would be incorrect.
+    // Close Jira child issues whose corresponding GitHub issues are actually closed.
+    // Important: Do NOT close Jira children just because they aren't sub-issues of
+    // the parent GitHub issue — the Jira parent-child hierarchy can legitimately
+    // differ from GitHub's sub-issue hierarchy.
     const fetchedCount = githubIssue?.subIssues?.nodes?.length ?? 0;
     const totalCount = githubIssue?.subIssues?.totalCount ?? 0;
     const allSubIssuesFetched = fetchedCount >= totalCount;
 
-    if (allSubIssuesFetched) {
-      for (const [_, child] of existingChildIssuesMap) {
-        if (child.fields?.status?.name === 'Closed') {
-          continue; // Already closed, skip to avoid redundant transition
+    if (allSubIssuesFetched && existingChildIssuesMap.size > 0) {
+      // Filter to only open Jira children that need checking
+      const unmatchedChildren = [...existingChildIssuesMap.entries()]
+        .filter(([_, child]) => child.fields?.status?.name !== 'Closed');
+
+      if (unmatchedChildren.length > 0) {
+        // Parse URLs and prepare batch query
+        const toCheck = unmatchedChildren
+          .map(([url, child], i) => ({ url, child, parsed: parseGitHubUrl(url), alias: `child_${i}` }))
+          .filter(item => item.parsed);
+
+        if (toCheck.length > 0) {
+          // Batch fetch GitHub issue states
+          const issueRequests = toCheck.map(({ alias, parsed }) => ({
+            alias,
+            owner: parsed.owner,
+            repo: parsed.repo,
+            issueNumber: parsed.issueNumber,
+          }));
+          const query = buildBatchedIssueStateQuery(issueRequests);
+          const batchOwner = issueRequests[0].owner;
+          const response = await executeGraphQLQuery(query, {}, batchOwner);
+
+          for (const item of toCheck) {
+            const ghIssue = response?.[item.alias]?.issue;
+            if (ghIssue?.state === 'CLOSED') {
+              await transitionJiraIssue(item.child.key, 'Closed');
+              console.log(
+                ` - Closed child issue ${item.child.key} as its GitHub issue is closed`
+              );
+            } else {
+              console.log(
+                ` - Skipping close of child issue ${item.child.key}: GitHub issue is still open (not a sub-issue of parent)`
+              );
+            }
+          }
         }
-        await transitionJiraIssue(child.key, 'Closed');
-        console.log(
-          ` - Closed child issue ${child.key} as it's no longer open in GitHub`
-        );
       }
-    } else if (existingChildIssuesMap.size > 0) {
+    } else if (!allSubIssuesFetched && existingChildIssuesMap.size > 0) {
       console.log(
         ` - ⚠ Skipping cleanup of ${existingChildIssuesMap.size} unmatched Jira child issues: ` +
           `only ${fetchedCount} of ${totalCount} GitHub sub-issues were fetched (pagination limit). ` +

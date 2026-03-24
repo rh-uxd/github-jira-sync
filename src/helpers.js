@@ -218,7 +218,7 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
-  {
+  /*{
     name: 'AI-infra-ui-components',
     owner: 'patternfly',
   },
@@ -257,11 +257,11 @@ export const availableComponents = [
   {
     name: 'patternfly-design',
     owner: 'patternfly',
-  },
+  },*/
   {
     name: 'patternfly-design-kit',
     owner: 'patternfly',
-  },
+  },/*
   {
     name: 'patternfly-doc-core',
     owner: 'patternfly',
@@ -341,7 +341,7 @@ export const availableComponents = [
   {
     name: 'jira-weekly-report',
     owner: 'rh-uxd'
-  }
+  }*/
 ];
 
 export const getJiraComponent = (repoName) =>
@@ -578,6 +578,10 @@ export const GET_ALL_REPO_ISSUES = `
                 totalCount
               }
             }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
             totalCount
           }
         }
@@ -682,6 +686,74 @@ export const GET_ISSUE_DETAILS = `
   }
 `;
 
+// Query to paginate sub-issues for a single issue
+const FETCH_SUB_ISSUES = `
+  query FetchSubIssues($owner: String!, $repo: String!, $issueNumber: Int!, $first: Int!, $after: String) {
+    repository(owner: $owner, name: $repo) {
+      issue(number: $issueNumber) {
+        subIssues(first: $first, after: $after) {
+          nodes {
+            title
+            url
+            state
+            number
+            issueType { name }
+            repository { nameWithOwner }
+            assignees(first: 3) { nodes { login } }
+            labels(first: 3) { nodes { name } }
+            comments(first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) {
+              nodes {
+                author { login }
+                body
+                createdAt
+                updatedAt
+                url
+              }
+              totalCount
+            }
+          }
+          pageInfo { endCursor hasNextPage }
+          totalCount
+        }
+      }
+    }
+  }
+`;
+
+// Fetch remaining sub-issues for issues where the initial bulk query was truncated
+async function fetchRemainingSubIssues(issue, owner, repo) {
+  const { subIssues } = issue;
+  if (!subIssues || subIssues.totalCount <= subIssues.nodes.length) {
+    return; // All sub-issues already fetched
+  }
+
+  const total = subIssues.totalCount;
+  const initialCount = subIssues.nodes.length;
+  console.log(`  Issue #${issue.number} has ${total} sub-issues (initial fetch: ${initialCount}), fetching remaining...`);
+
+  let cursor = subIssues.pageInfo?.endCursor;
+  let hasNextPage = subIssues.pageInfo?.hasNextPage ?? false;
+
+  while (hasNextPage && subIssues.nodes.length < total) {
+    const response = await executeGraphQLQuery(FETCH_SUB_ISSUES, {
+      owner,
+      repo,
+      issueNumber: issue.number,
+      first: 50,
+      after: cursor,
+    }, owner);
+
+    const page = response?.repository?.issue?.subIssues;
+    if (!page?.nodes?.length) break;
+
+    subIssues.nodes.push(...page.nodes);
+    cursor = page.pageInfo?.endCursor;
+    hasNextPage = page.pageInfo?.hasNextPage ?? false;
+  }
+
+  console.log(`  Issue #${issue.number}: fetched ${subIssues.nodes.length}/${total} sub-issues`);
+}
+
 export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
   // Validate environment variables
   if (!repo) {
@@ -755,6 +827,13 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
 
       // Handle other errors
       throw new Error(`Failed to fetch GitHub issues: ${error.message}`);
+    }
+  }
+
+  // Fetch remaining sub-issues for any issues that had more than the initial limit
+  for (const issue of allIssues) {
+    if (issue.subIssues?.totalCount > issue.subIssues?.nodes?.length) {
+      await fetchRemainingSubIssues(issue, ghOwner, repo);
     }
   }
 

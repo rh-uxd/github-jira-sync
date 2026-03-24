@@ -42,7 +42,7 @@ function jiraDescriptionToMarkdown(description) {
 }
 
 // Parse GitHub URL to extract owner, repo, and issue number
-function parseGitHubUrl(githubUrl) {
+export function parseGitHubUrl(githubUrl) {
   if (!githubUrl) return null;
   const match = githubUrl.match(/https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/);
   if (!match) return null;
@@ -523,7 +523,7 @@ export async function checkAndHandleArchivedJiraIssue(githubIssue) {
 }
 
 // Build a lightweight batched GraphQL query to check issue state and updatedAt
-function buildBatchedIssueStateQuery(issueRequests) {
+export function buildBatchedIssueStateQuery(issueRequests) {
   const fragments = issueRequests.map(({ alias, owner, repo, issueNumber }) => `
     ${alias}: repository(owner: "${owner}", name: "${repo}") {
       issue(number: ${issueNumber}) {
@@ -874,6 +874,17 @@ export async function createGitHubIssuesForManualJira(manualJiraIssues) {
   try {
     for (const jiraIssue of manualJiraIssues) {
       try {
+        const jiraStatus = jiraIssue.fields?.status?.name;
+        const jiraResolution = jiraIssue.fields?.resolution?.name;
+
+        // Skip closed duplicates entirely — the real Jira issue already exists
+        if (jiraStatus === 'Closed' && jiraResolution === 'Duplicate') {
+          console.log(
+            `  - Skipping Jira ${jiraIssue.key}: closed as Duplicate, no GitHub issue needed`
+          );
+          continue;
+        }
+
         // Extract component from Jira issue to determine target repository
         const jiraComponent = jiraIssue.fields.components?.[0]?.name;
         if (!jiraComponent) {
@@ -923,6 +934,20 @@ export async function createGitHubIssuesForManualJira(manualJiraIssues) {
         console.log(
           `  - Created GitHub issue ${owner}/${repo}#${createdIssue.number} for Jira ${jiraIssue.key} (component: ${jiraComponent})`
         );
+
+        // If the Jira issue is already closed, close the GitHub issue to match
+        if (jiraStatus === 'Closed') {
+          await closeGitHubIssue(owner, repo, createdIssue.number);
+          await addGitHubIssueComment(
+            owner,
+            repo,
+            createdIssue.number,
+            `Closed via Jira sync - Jira issue ${jiraIssue.key} is already closed (resolution: ${jiraResolution || 'N/A'}).`
+          );
+          console.log(
+            `  - Closed GitHub issue ${owner}/${repo}#${createdIssue.number} (Jira ${jiraIssue.key} is already closed)`
+          );
+        }
 
         // Update Jira issue description to include Upstream URL
         // Use appendMetadataToADF to preserve the original ADF content/formatting
