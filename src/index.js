@@ -10,6 +10,7 @@ import {
   checkAndHandleArchivedJiraIssue,
   syncUpdatedJiraIssuesToGitHub,
 } from './syncJiraToGitHub.js';
+import { errorCollector, syncStats } from './logging.js';
 
 export let jiraIssues = [];
 
@@ -83,45 +84,6 @@ function parseArgs() {
   return options;
 }
 
-// Error collector to store errors with context
-class ErrorCollector {
-  constructor() {
-    this.errors = [];
-  }
-
-  addError(context, error) {
-    this.errors.push({
-      context,
-      message: error.message,
-      response: error?.response?.data,
-      stack: error.stack,
-    });
-  }
-
-  hasErrors() {
-    return this.errors.length > 0;
-  }
-
-  logErrors() {
-    if (!this.hasErrors()) return;
-
-    this.errors.forEach(({ context, message, response }) => {
-      console.error(`  ${context}: ${message}`);
-      if (response) {
-        console.error(`  Response: ${JSON.stringify(response)}`);
-      }
-      console.error('  ==============================================');
-    });
-  }
-
-  clear() {
-    this.errors = [];
-  }
-}
-
-// Create global error collector instance
-export const errorCollector = new ErrorCollector();
-
 const fetchJiraIssues = async (owner, repo, since) => {
   console.log(' - fetching Jira...');
   const response = await jiraClient.get('/rest/api/3/search/jql', {
@@ -190,6 +152,7 @@ const fetchGitHubIssues = async (owner, repo, since) => {
 
 async function syncIssues(owner, repo, since, direction = 'both') {
   console.log(`\n\n=== START Syncing issues for repo ${ owner }/${ repo } updated since ${since} (direction: ${direction}) ===\n\n`);
+  syncStats.setCurrentRepo(`${owner}/${repo}`);
   try {
     // Clear any previous errors
     // errorCollector.clear();
@@ -284,6 +247,10 @@ async function syncIssues(owner, repo, since, direction = 'both') {
     errorCollector.addError('INDEX: Sync process', error);
   } finally {
     if (errorCollector.hasErrors()) {
+      // Track error count before clearing
+      for (let i = 0; i < errorCollector.errors.length; i++) {
+        syncStats.track('errors');
+      }
       // Log any collected errors at the end
       console.log(`\n=== ${repo.toUpperCase()} ERRORS ===\n`);
       errorCollector.logErrors();
@@ -310,3 +277,5 @@ console.log(`Sync direction: ${direction}`);
 for (const {name, owner} of availableComponents) {
   await syncIssues(owner, name, since, direction);
 }
+
+syncStats.printSummary();

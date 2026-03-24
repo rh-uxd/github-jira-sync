@@ -9,7 +9,7 @@ import {
 import { updateChildIssues } from './updateJiraIssue.js';
 import { addJiraLinkToGitHub } from './syncJiraToGitHub.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
-import { errorCollector } from './index.js';
+import { errorCollector, syncStats } from './logging.js';
 
 export async function createChildIssues(
   parentJiraKey,
@@ -78,6 +78,7 @@ export async function createChildIssues(
     console.log(
       ` - Created child issue ${newJiraKey} for GitHub issue ${repoOwner}/${repoName}#${subIssue.number}`
     );
+    syncStats.track('jiraCreated');
 
     // Sync comments for the child issue
     if (subIssue.comments?.totalCount > 0) {
@@ -119,6 +120,7 @@ export async function createJiraIssue(githubIssue) {
     console.log(
       `Created Jira issue ${newJiraKey} for GitHub issue #${githubIssue.number}\n`
     );
+    syncStats.track('jiraCreated');
   } catch (error) {
     errorCollector.addError(
       `CREATEJIRAISSUE: Error creating Jira issue for GitHub issue #${githubIssue.number}`,

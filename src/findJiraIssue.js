@@ -1,5 +1,6 @@
 import { jiraClient, shortDelay, extractTextFromADF } from './helpers.js';
-import { jiraIssues, errorCollector } from './index.js';
+import { jiraIssues } from './index.js';
+import { errorCollector } from './logging.js';
 
 const isUpstreamUrlMatch = (jiraDescription, ghIssueLink) => {
   const ghUrlSplit = ghIssueLink.split('/');

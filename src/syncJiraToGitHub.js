@@ -19,7 +19,7 @@ import {
   appendMetadataToADF,
   adfToMarkdown,
 } from './helpers.js';
-import { errorCollector } from './index.js';
+import { errorCollector, syncStats } from './logging.js';
 import j2m from 'jira2md';
 
 // Convert Jira description (ADF or legacy string) to GitHub Markdown, preserving formatting
@@ -301,7 +301,7 @@ export async function addJiraLinkToGitHub(jiraIssueKey, githubIssue) {
     const body = githubIssue.body ?? '';
     const bodyHasKey = body.includes(jiraIssueKey);
 
-    if (!bodyHasKey && body) {
+    if (!bodyHasKey) {
       const updatedBody = `${body}${footer}`;
       await updateGitHubIssue(owner, repo, issueNumber, {
         body: updatedBody,
@@ -361,6 +361,7 @@ export async function reopenGitHubIssueIfJiraReopened(jiraIssue, githubIssue) {
       console.log(
         `  - Reopened GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraIssue.key} was reopened)`
       );
+      syncStats.track('githubReopened');
       return true; // Handled
     } catch (error) {
       if (error.status === 404) {
@@ -424,6 +425,7 @@ export async function closeGitHubIssueIfJiraClosed(jiraIssue, githubIssue) {
       console.log(
         `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraIssue.key} is closed)`
       );
+      syncStats.track('githubClosed');
       return true; // Handled
     } catch (error) {
       if (error.status === 404) {
@@ -500,6 +502,7 @@ export async function checkAndHandleArchivedJiraIssue(githubIssue) {
       console.log(
         `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraKey} is archived)`
       );
+      syncStats.track('githubClosed');
       return true; // Handled
     } catch (error) {
       if (error.status === 404) {
@@ -578,6 +581,7 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
             `  - Skipping close for GitHub issue ${owner}/${repo}#${issueNumber}: ` +
             `open Jira issue ${openMatches[0].key} also links to this issue (closed ${jiraIssue.key} is likely a duplicate)`
           );
+          syncStats.track('warnings', { key: `GH #${issueNumber}`, message: `Skipped closing: open Jira also links (closed ${jiraIssue.key} is duplicate)` });
           continue;
         }
       } catch (err) {
@@ -585,6 +589,7 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
         console.log(
           `  - Warning: Could not verify open Jira links for ${githubUrl}, skipping close to be safe`
         );
+        syncStats.track('warnings', { key: jiraIssue.key, message: 'Could not verify open Jira links, skipped close' });
         continue;
       }
 
@@ -676,6 +681,7 @@ export async function closeGitHubIssuesForClosedJira(closedJiraIssues) {
         console.log(
           `  - Closed GitHub issue ${owner}/${repo}#${issueNumber} (Jira ${jiraIssue.key} was closed)`
         );
+        syncStats.track('githubClosed');
       } catch (error) {
         if (error.status === 404) {
           console.log(`  - GitHub issue ${owner}/${repo}#${issueNumber} not found, skipping`);
@@ -934,6 +940,7 @@ export async function createGitHubIssuesForManualJira(manualJiraIssues) {
         console.log(
           `  - Created GitHub issue ${owner}/${repo}#${createdIssue.number} for Jira ${jiraIssue.key} (component: ${jiraComponent})`
         );
+        syncStats.track('githubCreated');
 
         // If the Jira issue is already closed, close the GitHub issue to match
         if (jiraStatus === 'Closed') {
@@ -947,6 +954,7 @@ export async function createGitHubIssuesForManualJira(manualJiraIssues) {
           console.log(
             `  - Closed GitHub issue ${owner}/${repo}#${createdIssue.number} (Jira ${jiraIssue.key} is already closed)`
           );
+          syncStats.track('githubClosed');
         }
 
         // Update Jira issue description to include Upstream URL

@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
-import { errorCollector } from './index.js';
+import { errorCollector } from './logging.js';
 import j2m from 'jira2md';
 
 // Initialize Octokit with GraphQL support
@@ -297,11 +297,11 @@ export const availableComponents = [
   {
     name: 'pf-codemods',
     owner: 'patternfly',
-  },
+  },*/
   {
     name: 'pf-roadmap',
     owner: 'patternfly',
-  },
+  },/*
   {
     name: 'react-catalog-view',
     owner: 'patternfly',
@@ -547,6 +547,7 @@ export const GET_ALL_REPO_ISSUES = `
             nodes {
               title
               url
+              body
               state
               number
               issueType {
@@ -695,6 +696,7 @@ const FETCH_SUB_ISSUES = `
           nodes {
             title
             url
+            body
             state
             number
             issueType { name }

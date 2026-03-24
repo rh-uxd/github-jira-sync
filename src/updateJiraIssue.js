@@ -13,7 +13,7 @@ import {
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
-import { errorCollector } from './index.js';
+import { errorCollector, syncStats } from './logging.js';
 import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleAndDescriptionToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened, parseGitHubUrl, buildBatchedIssueStateQuery } from './syncJiraToGitHub.js';
 
 async function findChildIssues(jiraIssueKey) {
@@ -167,6 +167,7 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               console.log(
                 ` - Skipping close of child issue ${item.child.key}: GitHub issue is still open (not a sub-issue of parent)`
               );
+              syncStats.track('warnings', { key: item.child.key, message: 'GitHub issue is still open (not a sub-issue of parent)' });
             }
           }
         }
