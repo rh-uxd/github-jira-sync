@@ -420,15 +420,61 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
 // Helper function to execute GraphQL queries
 // GraphQL uses a point-based rate limit (5,000 points/hr), not request-based,
 // so we use a short delay instead of the full 1-second delay used for REST writes.
-export async function executeGraphQLQuery(query, variables, owner = null) {
+const RATE_LIMIT_MAX_RETRIES = 2;
+const RATE_LIMIT_MAX_WAIT_MS = 5 * 60 * 1000;
+const RATE_LIMIT_MIN_WAIT_MS = 60 * 1000;
+
+export async function executeGraphQLQuery(query, variables, owner = null, _retryCount = 0) {
+  const queryMatch = query.match(/(?:query|mutation)\s+(\w+)/);
+  const queryName = queryMatch ? queryMatch[1] : query.trim().substring(0, 80).replace(/\s+/g, ' ');
   try {
     await shortDelay();
     // Extract owner from variables if not provided directly
     const ownerToUse = owner || variables?.owner || 'patternfly';
     const octokitInstance = getOctokitForOwner(ownerToUse);
-    const response = await octokitInstance.graphql(query, variables);
-    return response;
+    const fullResponse = await octokitInstance.request('POST /graphql', {
+      query,
+      variables,
+    });
+    const h = fullResponse.headers;
+
+    // Detect rate limit from GraphQL response errors (returns HTTP 200, not 429)
+    const rateLimitError = fullResponse.data.errors?.find(e => e.type === 'RATE_LIMITED');
+    if (rateLimitError) {
+      if (_retryCount < RATE_LIMIT_MAX_RETRIES) {
+        const resetEpoch = parseInt(h['x-ratelimit-reset'], 10);
+        let waitMs = RATE_LIMIT_MIN_WAIT_MS;
+        if (!isNaN(resetEpoch)) {
+          waitMs = (resetEpoch * 1000) - Date.now() + 1000;
+          waitMs = Math.max(RATE_LIMIT_MIN_WAIT_MS, waitMs);
+          waitMs = Math.min(RATE_LIMIT_MAX_WAIT_MS, waitMs);
+        }
+        console.log(`[Rate Limit] ${queryName}: rate limit exceeded. Waiting ${Math.round(waitMs / 1000)}s until reset (retry ${_retryCount + 1}/${RATE_LIMIT_MAX_RETRIES})...`);
+        await delay(waitMs);
+        return executeGraphQLQuery(query, variables, owner, _retryCount + 1);
+      }
+      console.log(`[Rate Limit] ${queryName}: max retries (${RATE_LIMIT_MAX_RETRIES}) exceeded after rate limiting.`);
+      errorCollector.addError('HELPERS: GraphQL rate limit exceeded', rateLimitError);
+      return null;
+    }
+
+    // Warn when budget is getting low
+    const remaining = parseInt(h['x-ratelimit-remaining'], 10);
+    if (!isNaN(remaining) && remaining < 500) {
+      console.log(`[Rate Limit Warning] ${queryName}: ${remaining} points remaining of ${h['x-ratelimit-limit']}`);
+    }
+
+    return fullResponse.data.data;
   } catch (error) {
+    // Handle secondary rate limit (HTTP 403 with retry-after)
+    const retryAfter = error?.response?.headers?.['retry-after'];
+    if (retryAfter && _retryCount < RATE_LIMIT_MAX_RETRIES) {
+      const waitMs = Math.min(parseInt(retryAfter, 10) * 1000 || RATE_LIMIT_MIN_WAIT_MS, RATE_LIMIT_MAX_WAIT_MS);
+      console.log(`[Rate Limit] ${queryName}: secondary rate limit hit. Waiting ${Math.round(waitMs / 1000)}s (retry ${_retryCount + 1}/${RATE_LIMIT_MAX_RETRIES})...`);
+      await delay(waitMs);
+      return executeGraphQLQuery(query, variables, owner, _retryCount + 1);
+    }
+
     errorCollector.addError('HELPERS: GraphQL query execution', error);
     return null;
   }
@@ -445,7 +491,7 @@ export const GET_ALL_REPO_ISSUES = `
     $numLabelsPerIssue: Int = 10
     $numAssigneesPerIssue: Int = 10
     $numCommentsPerIssue: Int = 20
-    $numSubIssuesPerIssue: Int = 100
+    $numSubIssuesPerIssue: Int = 10
     $since: DateTime
   ) {
     repository(owner: $owner, name: $repo) {
