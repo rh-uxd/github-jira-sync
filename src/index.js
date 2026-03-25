@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl } from './helpers.js';
+import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl, paginatedJiraSearch } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
@@ -86,15 +86,12 @@ function parseArgs() {
 
 const fetchJiraIssues = async (owner, repo, since) => {
   console.log(' - fetching Jira...');
-  const response = await jiraClient.get('/rest/api/3/search/jql', {
-    params: {
-      jql: `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) ORDER BY key ASC`,
-      maxResults: 1000,
-      fields: 'key,id,description,status,assignee,issuetype,updated,summary,components',
-    },
-  });
-  const jiraIssues = response?.data?.issues || [];
-  console.log(`    --> Found ${jiraIssues.length} open Jira issues for Jira component ${ repo }`); 
+  const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
+  const jiraIssues = await paginatedJiraSearch(
+    `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) AND updatedDate >= "${jiraDate}" ORDER BY key ASC`,
+    'key,id,description,status,assignee,issuetype,updated,summary,components'
+  );
+  console.log(`    --> Found ${jiraIssues.length} open Jira issues updated since ${since} for Jira component ${ repo }`);
   return jiraIssues;
 };
 
@@ -102,14 +99,10 @@ const fetchClosedJiraIssues = async (owner, repo, since) => {
   console.log(` - fetching closed Jira issues for component ${repo}...`);
   // Format since date for Jira JQL (Jira uses format: YYYY-MM-DD HH:mm)
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
-  const response = await jiraClient.get('/rest/api/3/search/jql', {
-    params: {
-      jql: `project = PF AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
-      maxResults: 1000,
-      fields: 'key,id,description,status,assignee,issuetype,updated',
-    },
-  });
-  const closedIssues = response?.data?.issues || [];
+  const closedIssues = await paginatedJiraSearch(
+    `project = PF AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+    'key,id,description,status,assignee,issuetype,updated'
+  );
   // Filter to only issues with Upstream URL
   const closedIssuesWithUpstream = closedIssues.filter((issue) =>
     hasUpstreamUrl(issue.fields.description)
@@ -122,14 +115,10 @@ const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
   console.log(` - fetching manually created Jira issues for component ${repo}...`);
   // Format since date for Jira JQL
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
-  const response = await jiraClient.get('/rest/api/3/search/jql', {
-    params: {
-      jql: `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
-      maxResults: 1000,
-      fields: 'key,id,summary,description,status,resolution,assignee,issuetype,reporter,components,updated',
-    },
-  });
-  const allIssues = response?.data?.issues || [];
+  const allIssues = await paginatedJiraSearch(
+    `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+    'key,id,summary,description,status,resolution,assignee,issuetype,reporter,components,updated'
+  );
   // Filter to only issues without Upstream URL (manually created, not synced from GitHub)
   const manualIssues = allIssues.filter((issue) =>
     !hasUpstreamUrl(issue.fields.description)
@@ -219,9 +208,8 @@ async function syncIssues(owner, repo, since, direction = 'both') {
 
       // Sync recently-updated Jira issues that weren't already processed in the GitHub-driven loop
       console.log(`\n= Jira → GitHub sync: recently-updated Jira issues since ${since} =\n`);
-      const sinceDate = new Date(since);
       const recentlyUpdatedJiraIssues = jiraIssues.filter(
-        (issue) => new Date(issue.fields.updated) >= sinceDate && !processedJiraIssues.has(issue.key)
+        (issue) => !processedJiraIssues.has(issue.key)
       );
       if (recentlyUpdatedJiraIssues.length > 0) {
         await syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner);

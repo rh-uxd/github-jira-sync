@@ -66,6 +66,30 @@ export const jiraClient = axios.create({
   },
 });
 
+/**
+ * Paginated Jira JQL search — fetches all matching issues across pages.
+ * Jira Cloud caps results at 100 per page regardless of maxResults requested.
+ */
+export async function paginatedJiraSearch(jql, fields) {
+  const PAGE_SIZE = 100;
+  let startAt = 0;
+  let allIssues = [];
+  let total;
+
+  do {
+    const response = await jiraClient.get('/rest/api/3/search/jql', {
+      params: { jql, maxResults: PAGE_SIZE, fields, startAt },
+    });
+    const data = response?.data || {};
+    const issues = data.issues || [];
+    allIssues = allIssues.concat(issues);
+    total = data.total ?? 0;
+    startAt += issues.length;
+  } while (startAt < total);
+
+  return allIssues;
+}
+
 export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
   await delay();
   // Add remote link to GitHub issue
@@ -218,7 +242,7 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
-  {
+  /*{
     name: 'AI-infra-ui-components',
     owner: 'patternfly',
   },
@@ -253,11 +277,11 @@ export const availableComponents = [
   {
     name: 'patternfly-cli',
     owner: 'patternfly',
-  },
+  },*/
   {
     name: 'patternfly-design',
     owner: 'patternfly',
-  },
+  },/*
   {
     name: 'patternfly-design-kit',
     owner: 'patternfly',
@@ -341,7 +365,7 @@ export const availableComponents = [
   {
     name: 'jira-weekly-report',
     owner: 'rh-uxd'
-  }
+  }*/
 ];
 
 export const getJiraComponent = (repoName) =>
