@@ -242,7 +242,7 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
-  /*{
+  {
     name: 'AI-infra-ui-components',
     owner: 'patternfly',
   },
@@ -277,11 +277,11 @@ export const availableComponents = [
   {
     name: 'patternfly-cli',
     owner: 'patternfly',
-  },*/
+  },
   {
     name: 'patternfly-design',
     owner: 'patternfly',
-  },/*
+  },
   {
     name: 'patternfly-design-kit',
     owner: 'patternfly',
@@ -365,7 +365,7 @@ export const availableComponents = [
   {
     name: 'jira-weekly-report',
     owner: 'rh-uxd'
-  }*/
+  }
 ];
 
 export const getJiraComponent = (repoName) =>
