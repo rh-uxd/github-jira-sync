@@ -47,9 +47,10 @@ The sync tool operates in **two directions** with **timestamp-based conflict res
 
 **Jira → GitHub Sync** (Reverse direction):
 - Syncs assignees from Jira to GitHub (when Jira was updated more recently)
-- Syncs issue titles from Jira to GitHub (when Jira was updated more recently)
+- Syncs issue titles and descriptions from Jira to GitHub (when Jira was updated more recently)
 - Adds Jira issue links to GitHub issue descriptions and comments
 - Closes GitHub issues when their corresponding Jira issues are closed
+- Reopens GitHub issues when their corresponding Jira issues are reopened
 
 ### Conflict Resolution
 
@@ -64,27 +65,28 @@ This ensures that manual updates in either system are preserved and synced corre
 
 For each repository, the sync processes in this order:
 1. **GitHub → Jira**: All GitHub issues updated since the specified date
-2. **Jira → GitHub**: 
+2. **Jira → GitHub**:
+   - Recently updated Jira issues not already processed in step 1
    - Recently closed Jira issues (to close corresponding GitHub issues)
    - Manually created Jira issues (to create corresponding GitHub issues)
 
 ## Usage
 
-Run the sync with default date (hardcoded fallback is 7 days prior to current date):
+Run the sync with default lookback (2 days prior to current date):
 ```bash
 npm run sync
 ```
 
 Run the sync with a custom date:
 ```bash
-npm run sync --since 2025-01-01T00:00:00Z
+npm run sync -- --since 2025-01-01T00:00:00Z
 ```
 
 Run sync in a specific direction:
 ```bash
-npm run sync --direction github-to-jira    # Only sync GitHub → Jira
-npm run sync --direction jira-to-github    # Only sync Jira → GitHub
-npm run sync --direction both              # Sync both directions (default)
+npm run sync -- --direction github-to-jira    # Only sync GitHub → Jira
+npm run sync -- --direction jira-to-github    # Only sync Jira → GitHub
+npm run sync -- --direction both              # Sync both directions (default)
 ```
 
 Or use the convenience script:
@@ -100,7 +102,7 @@ npm run sync:since 01-01-2025
 
 ### Core Synchronization
 - **Bidirectional Sync**: Automatically syncs changes in both GitHub → Jira and Jira → GitHub directions
-- **Multi-Repository Processing**: Automatically syncs all 27 PatternFly repositories in a single run
+- **Multi-Repository Processing**: Automatically syncs all configured PatternFly repositories in a single run
 - **Timestamp-Based Conflict Resolution**: Uses "last updated wins" strategy to prevent overwriting recent changes
 - **State Sync**: Keeps GitHub and Jira issue states synchronized (open/closed)
 - **Smart Issue Matching**: Links GitHub issues to Jira issues using GitHub URL references in Jira descriptions
@@ -117,6 +119,7 @@ npm run sync:since 01-01-2025
 - **Epic Support**: Creates Jira Epics for GitHub Epic-type issues with proper Epic linking
 - **Sub-task Flagging**: Alerts when issues need to be converted to sub-tasks (requires manual updates in Jira UI due to API limitations)
 - **Dynamic Hierarchy Updates**: Maintains parent-child relationships as they change in GitHub
+- **Safe Child Cleanup**: Only closes unmatched Jira children when their GitHub issue is actually closed, not merely absent from the parent's sub-issue list
 
 ### Team Integration
 - **User Mapping**: Maps GitHub usernames to Jira usernames for Platform, Enablement, and Design teams
@@ -127,18 +130,22 @@ npm run sync:since 01-01-2025
 - **Manual Jira Issue Creation**: Automatically creates GitHub issues for manually created Jira issues (Epic, Story, Task, Bug, Sub-task only)
 
 ### Reliability & Performance
-- **Rate Limiting Protection**: Built-in delays and retry logic to avoid API rate limits
+- **GraphQL Batching**: Batches GitHub API calls via GraphQL to minimize rate limit usage
+- **Lazy Sub-Issue Pagination**: Fetches only 10 sub-issues per issue initially, then paginates remaining only when needed
+- **Rate Limiting Protection**: Built-in delays, retry logic, and rate limit detection for both REST and GraphQL APIs
 - **Comprehensive Error Handling**: Collects and reports errors with full context for debugging
-- **Batch Processing**: Efficiently processes multiple repositories and issues
-- **Date Filtering**: Only processes issues updated since a specified date for performance
+- **End-of-Sync Summary**: Prints a summary table showing all creates, closes, reopens, errors, and warnings across all repos
+- **Date Filtering**: Only processes issues updated since a specified date (default: 2 days)
 
 ## Error Handling & Known Limitations
 
 The application includes comprehensive error handling with detailed logging and context. All errors are collected and reported at the end of each repository sync for easy debugging.
 
-### Error Collection System
+### Error Collection & Reporting
 - **Contextual Error Reporting**: Each error includes the operation context, error message, and API response details
 - **Per-Repository Error Summary**: Errors are grouped by repository and displayed at the end of processing
+- **End-of-Sync Summary Table**: After all repos finish, a summary table shows Jira/GitHub creates, closes, reopens, errors, and warnings — only repos with activity are shown
+- **Grouped Warning Details**: Warnings are listed below the table, grouped by repo and message type with issue keys listed inline
 - **Graceful Degradation**: Individual issue failures don't stop the overall sync process
 
 ### Known Limitations
@@ -156,7 +163,7 @@ The application includes comprehensive error handling with detailed logging and 
 
 ## Supported PatternFly Repositories
 
-The application automatically syncs issues from all 28 PatternFly repositories:
+The application syncs issues from PatternFly repositories configured in `src/helpers.js` (`availableComponents`). Currently configured:
 
 - AI-infra-ui-components
 - chatbot

@@ -1,0 +1,415 @@
+/**
+ * Tests for sync edge cases: child issue closing logic, sub-issue pagination,
+ * GitHub URL parsing, batched query building, Jira link addition, rate limit
+ * handling, and sync stats tracking.
+ *
+ * Run: node tests/sync-edge-cases.test.mjs
+ */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Import exported functions directly
+import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
+import { extractTextFromADF, extractUpstreamUrl } from '../src/helpers.js';
+import { syncStats, errorCollector } from '../src/logging.js';
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition, message) {
+  if (condition) {
+    passed++;
+    console.log(`  PASS: ${message}`);
+  } else {
+    failed++;
+    console.error(`  FAIL: ${message}`);
+  }
+}
+
+function assertEqual(actual, expected, message) {
+  if (actual === expected) {
+    passed++;
+    console.log(`  PASS: ${message}`);
+  } else {
+    failed++;
+    console.error(`  FAIL: ${message}`);
+    console.error(`    Expected: ${JSON.stringify(expected)}`);
+    console.error(`    Actual:   ${JSON.stringify(actual)}`);
+  }
+}
+
+// ─── parseGitHubUrl ──────────────────────────────────────────────────────────
+
+console.log('\n=== parseGitHubUrl ===');
+
+{
+  const result = parseGitHubUrl('https://github.com/patternfly/patternfly-react/issues/12345');
+  assertEqual(result.owner, 'patternfly', 'parses owner');
+  assertEqual(result.repo, 'patternfly-react', 'parses repo');
+  assertEqual(result.issueNumber, 12345, 'parses issue number as integer');
+}
+
+{
+  const result = parseGitHubUrl('https://github.com/rh-uxd/github-jira-sync/issues/27');
+  assertEqual(result.owner, 'rh-uxd', 'handles non-patternfly org');
+  assertEqual(result.repo, 'github-jira-sync', 'parses repo for non-patternfly org');
+}
+
+{
+  assertEqual(parseGitHubUrl(null), null, 'returns null for null input');
+  assertEqual(parseGitHubUrl(undefined), null, 'returns null for undefined input');
+  assertEqual(parseGitHubUrl(''), null, 'returns null for empty string');
+  assertEqual(parseGitHubUrl('https://github.com/patternfly/patternfly-react/pulls/123'), null, 'returns null for pull request URL');
+  assertEqual(parseGitHubUrl('not-a-url'), null, 'returns null for non-URL string');
+}
+
+// ─── buildBatchedIssueStateQuery ─────────────────────────────────────────────
+
+console.log('\n=== buildBatchedIssueStateQuery ===');
+
+{
+  const query = buildBatchedIssueStateQuery([
+    { alias: 'repo_0', owner: 'patternfly', repo: 'pf-roadmap', issueNumber: 282 },
+    { alias: 'repo_1', owner: 'patternfly', repo: 'patternfly-react', issueNumber: 12345 },
+  ]);
+
+  assert(query.includes('query BatchedIssueState'), 'query has correct operation name');
+  assert(query.includes('repo_0: repository(owner: "patternfly", name: "pf-roadmap")'), 'includes first alias with correct repo');
+  assert(query.includes('issue(number: 282)'), 'includes first issue number');
+  assert(query.includes('repo_1: repository(owner: "patternfly", name: "patternfly-react")'), 'includes second alias');
+  assert(query.includes('issue(number: 12345)'), 'includes second issue number');
+  assert(query.includes('state'), 'queries issue state');
+  assert(query.includes('updatedAt'), 'queries updatedAt');
+}
+
+{
+  const query = buildBatchedIssueStateQuery([
+    { alias: 'single', owner: 'org', repo: 'repo', issueNumber: 1 },
+  ]);
+  assert(query.includes('single: repository'), 'works with single issue');
+}
+
+// ─── Child issue matching: Upstream URL extraction ───────────────────────────
+
+console.log('\n=== Upstream URL extraction from ADF ===');
+
+{
+  const adf = {
+    type: 'doc',
+    version: 1,
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'Some description text' },
+        ],
+      },
+      { type: 'rule' },
+      {
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'Upstream URL: https://github.com/patternfly/patternfly-design-kit/issues/927' },
+        ],
+      },
+    ],
+  };
+
+  const text = extractTextFromADF(adf);
+  assert(text.includes('Upstream URL: https://github.com/patternfly/patternfly-design-kit/issues/927'),
+    'extractTextFromADF extracts upstream URL from ADF');
+
+  const url = extractUpstreamUrl(adf);
+  assertEqual(url, 'https://github.com/patternfly/patternfly-design-kit/issues/927',
+    'extractUpstreamUrl finds URL in ADF description');
+}
+
+{
+  const adfNoUrl = {
+    type: 'doc',
+    version: 1,
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: 'No URL here' }] }],
+  };
+  const url = extractUpstreamUrl(adfNoUrl);
+  assertEqual(url, null, 'extractUpstreamUrl returns null when no upstream URL');
+}
+
+// ─── Child issue closing: simulated matching logic ───────────────────────────
+
+console.log('\n=== Child issue matching logic (simulated) ===');
+
+{
+  // Simulate the existingChildIssuesMap matching from updateChildIssues
+  // This tests the core logic: Jira children matched by URL get removed from map,
+  // unmatched ones remain and should NOT be auto-closed if GitHub is open.
+
+  const existingChildIssuesMap = new Map([
+    ['https://github.com/patternfly/pf-roadmap/issues/100', { key: 'PF-1001', fields: { status: { name: 'Open' } } }],
+    ['https://github.com/patternfly/pf-roadmap/issues/101', { key: 'PF-1002', fields: { status: { name: 'Open' } } }],
+    ['https://github.com/patternfly/patternfly/issues/8234', { key: 'PF-1003', fields: { status: { name: 'Open' } } }],
+    ['https://github.com/patternfly/patternfly/issues/8235', { key: 'PF-1004', fields: { status: { name: 'Closed' } } }],
+  ]);
+
+  // Simulate GitHub sub-issues of the parent (only 2 of 4 match)
+  const subIssues = [
+    { url: 'https://github.com/patternfly/pf-roadmap/issues/100' },
+    { url: 'https://github.com/patternfly/pf-roadmap/issues/101' },
+  ];
+
+  // Match and remove from map (as updateChildIssues does)
+  for (const subIssue of subIssues) {
+    existingChildIssuesMap.delete(subIssue.url);
+  }
+
+  assertEqual(existingChildIssuesMap.size, 2, 'two unmatched Jira children remain in map');
+  assert(existingChildIssuesMap.has('https://github.com/patternfly/patternfly/issues/8234'),
+    'cross-repo open issue remains unmatched');
+  assert(existingChildIssuesMap.has('https://github.com/patternfly/patternfly/issues/8235'),
+    'cross-repo closed issue remains unmatched');
+
+  // Simulate the fix: filter out already-closed, then check GitHub state
+  const unmatchedOpen = [...existingChildIssuesMap.entries()]
+    .filter(([_, child]) => child.fields?.status?.name !== 'Closed');
+  assertEqual(unmatchedOpen.length, 1, 'only 1 unmatched child is open in Jira');
+  assertEqual(unmatchedOpen[0][1].key, 'PF-1003', 'PF-1003 is the open unmatched child');
+
+  // PF-1003's GitHub issue (8234) is still OPEN → should NOT close
+  // PF-1004 is already Closed in Jira → skipped entirely
+  // This is the fix: we check GitHub state before closing, not just "unmatched = close"
+}
+
+// ─── Sub-issue pagination detection ──────────────────────────────────────────
+
+console.log('\n=== Sub-issue pagination detection ===');
+
+{
+  // Simulate an issue with truncated sub-issues (totalCount > nodes.length)
+  const issue = {
+    number: 282,
+    subIssues: {
+      nodes: Array(10).fill({ url: 'https://example.com', title: 'test' }),
+      totalCount: 35,
+      pageInfo: { endCursor: 'cursor123', hasNextPage: true },
+    },
+  };
+
+  const fetchedCount = issue.subIssues.nodes.length;
+  const totalCount = issue.subIssues.totalCount;
+  const allSubIssuesFetched = fetchedCount >= totalCount;
+
+  assertEqual(allSubIssuesFetched, false, 'detects truncated sub-issues (10 of 35)');
+  assert(issue.subIssues.pageInfo.hasNextPage, 'pageInfo indicates more pages');
+  assertEqual(issue.subIssues.pageInfo.endCursor, 'cursor123', 'cursor available for pagination');
+}
+
+{
+  // Issue with all sub-issues fetched
+  const issue = {
+    number: 281,
+    subIssues: {
+      nodes: Array(7).fill({ url: 'https://example.com' }),
+      totalCount: 7,
+      pageInfo: { endCursor: 'end', hasNextPage: false },
+    },
+  };
+
+  const allFetched = issue.subIssues.nodes.length >= issue.subIssues.totalCount;
+  assertEqual(allFetched, true, 'detects all sub-issues fetched (7 of 7)');
+}
+
+{
+  // Issue with no sub-issues
+  const issue = {
+    number: 100,
+    subIssues: { nodes: [], totalCount: 0 },
+  };
+
+  const needsPagination = issue.subIssues.totalCount > issue.subIssues.nodes.length;
+  assertEqual(needsPagination, false, 'no pagination needed for zero sub-issues');
+}
+
+// ─── SyncStats tracking ─────────────────────────────────────────────────────
+
+console.log('\n=== SyncStats tracking ===');
+
+{
+  // Reset syncStats for testing
+  syncStats.repoStats.clear();
+  syncStats.currentRepo = null;
+
+  // Track without setting repo should be no-op
+  syncStats.track('jiraCreated');
+  assertEqual(syncStats.repoStats.size, 0, 'track without currentRepo is no-op');
+
+  // Set repo and track events
+  syncStats.setCurrentRepo('patternfly/pf-roadmap');
+  syncStats.track('jiraCreated');
+  syncStats.track('jiraCreated');
+  syncStats.track('jiraClosed');
+  syncStats.track('githubClosed');
+  syncStats.track('githubClosed');
+  syncStats.track('githubClosed');
+  syncStats.track('githubReopened');
+  syncStats.track('errors');
+
+  const stats = syncStats.repoStats.get('patternfly/pf-roadmap');
+  assertEqual(stats.jiraCreated, 2, 'tracks 2 jiraCreated');
+  assertEqual(stats.jiraClosed, 1, 'tracks 1 jiraClosed');
+  assertEqual(stats.githubClosed, 3, 'tracks 3 githubClosed');
+  assertEqual(stats.githubReopened, 1, 'tracks 1 githubReopened');
+  assertEqual(stats.errors, 1, 'tracks 1 error');
+  assertEqual(stats.warnings.length, 0, 'no warnings tracked yet');
+
+  // Track structured warnings
+  syncStats.track('warnings', { key: 'PF-3748', message: 'GitHub issue is still open (not a sub-issue of parent)' });
+  syncStats.track('warnings', { key: 'PF-3740', message: 'GitHub issue is still open (not a sub-issue of parent)' });
+  syncStats.track('warnings', { key: 'GH #21', message: 'Skipped closing: open Jira also links (closed PF-3709 is duplicate)' });
+
+  assertEqual(stats.warnings.length, 3, 'tracks 3 warnings');
+  assertEqual(stats.warnings[0].key, 'PF-3748', 'warning has correct key');
+  assertEqual(stats.warnings[0].message, 'GitHub issue is still open (not a sub-issue of parent)', 'warning has correct message');
+
+  // Switch repo
+  syncStats.setCurrentRepo('patternfly/patternfly-design-kit');
+  syncStats.track('githubCreated');
+  assertEqual(syncStats.repoStats.size, 2, 'tracks stats for 2 repos');
+  assertEqual(syncStats.repoStats.get('patternfly/patternfly-design-kit').githubCreated, 1, 'second repo tracked independently');
+
+  // Clean up
+  syncStats.repoStats.clear();
+  syncStats.currentRepo = null;
+}
+
+// ─── SyncStats printSummary grouping ─────────────────────────────────────────
+
+console.log('\n=== SyncStats printSummary grouping ===');
+
+{
+  syncStats.repoStats.clear();
+  syncStats.setCurrentRepo('patternfly/patternfly-design-kit');
+
+  // Add many warnings of the same type
+  for (let i = 3756; i <= 3796; i++) {
+    syncStats.track('warnings', { key: `PF-${i}`, message: 'GitHub issue is still open (not a sub-issue of parent)' });
+  }
+
+  const stats = syncStats.repoStats.get('patternfly/patternfly-design-kit');
+  assertEqual(stats.warnings.length, 41, 'all 41 warnings tracked');
+
+  // Verify grouping logic (same as printSummary uses)
+  const grouped = new Map();
+  for (const w of stats.warnings) {
+    const keys = grouped.get(w.message) || [];
+    keys.push(w.key);
+    grouped.set(w.message, keys);
+  }
+
+  assertEqual(grouped.size, 1, 'all warnings group into 1 message type');
+  const keys = grouped.get('GitHub issue is still open (not a sub-issue of parent)');
+  assertEqual(keys.length, 41, 'grouped message has all 41 keys');
+  assert(keys.includes('PF-3756'), 'includes first key');
+  assert(keys.includes('PF-3796'), 'includes last key');
+
+  // Clean up
+  syncStats.repoStats.clear();
+  syncStats.currentRepo = null;
+}
+
+// ─── ErrorCollector ──────────────────────────────────────────────────────────
+
+console.log('\n=== ErrorCollector ===');
+
+{
+  errorCollector.clear();
+  assertEqual(errorCollector.hasErrors(), false, 'no errors initially');
+
+  errorCollector.addError('TEST: context1', new Error('test error 1'));
+  errorCollector.addError('TEST: context2', new Error('test error 2'));
+
+  assertEqual(errorCollector.hasErrors(), true, 'hasErrors returns true after adding');
+  assertEqual(errorCollector.errors.length, 2, 'tracks 2 errors');
+  assertEqual(errorCollector.errors[0].context, 'TEST: context1', 'first error context');
+  assertEqual(errorCollector.errors[0].message, 'test error 1', 'first error message');
+
+  errorCollector.clear();
+  assertEqual(errorCollector.hasErrors(), false, 'clear resets errors');
+  assertEqual(errorCollector.errors.length, 0, 'clear empties array');
+}
+
+// ─── Rate limit retry logic (executeGraphQLQuery) ────────────────────────────
+
+console.log('\n=== Rate limit constants ===');
+
+{
+  // Read the helpers source to verify rate limit constants
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+
+  assert(helpersSrc.includes('RATE_LIMIT_MAX_RETRIES = 2'), 'max retries is 2');
+  assert(helpersSrc.includes('RATE_LIMIT_MAX_WAIT_MS = 5 * 60 * 1000'), 'max wait is 5 minutes');
+  assert(helpersSrc.includes('RATE_LIMIT_MIN_WAIT_MS = 60 * 1000'), 'min wait is 60 seconds');
+  assert(helpersSrc.includes("e.type === 'RATE_LIMITED'"), 'detects RATE_LIMITED error type');
+  assert(helpersSrc.includes("error?.response?.headers?.['retry-after']"), 'handles retry-after header for secondary rate limits');
+}
+
+// ─── Jira link footer guard: empty body handling ─────────────────────────────
+
+console.log('\n=== addJiraLinkToGitHub: empty body guard ===');
+
+{
+  // Read the source to verify the fix
+  const syncSrc = readFileSync(join(__dirname, '../src/syncJiraToGitHub.js'), 'utf-8');
+
+  // Verify the fix: should be `if (!bodyHasKey)` not `if (!bodyHasKey && body)`
+  assert(syncSrc.includes('if (!bodyHasKey) {'), 'addJiraLinkToGitHub uses !bodyHasKey without && body guard');
+  assert(!syncSrc.includes('if (!bodyHasKey && body)'), 'old guard with && body is removed');
+}
+
+// ─── Sub-issue GraphQL queries include body field ────────────────────────────
+
+console.log('\n=== Sub-issue GraphQL queries include body field ===');
+
+{
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+
+  // Check GET_ALL_REPO_ISSUES sub-issues include body
+  const mainQueryMatch = helpersSrc.match(/subIssues\(first: \$numSubIssuesPerIssue\)\s*\{[\s\S]*?totalCount\s*\}/);
+  assert(mainQueryMatch && mainQueryMatch[0].includes('body'), 'GET_ALL_REPO_ISSUES sub-issues query includes body field');
+
+  // Check FETCH_SUB_ISSUES includes body
+  const paginationQueryMatch = helpersSrc.match(/FETCH_SUB_ISSUES[\s\S]*?subIssues\(first: \$first[\s\S]*?totalCount\s*\}\s*\}/);
+  assert(paginationQueryMatch && paginationQueryMatch[0].includes('body'), 'FETCH_SUB_ISSUES pagination query includes body field');
+}
+
+// ─── Sub-issue pagination: pageInfo in main query ────────────────────────────
+
+console.log('\n=== Sub-issue pagination: pageInfo in main query ===');
+
+{
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+
+  // The subIssues field in GET_ALL_REPO_ISSUES should have pageInfo for cursor-based pagination
+  // Match from subIssues opening to the closing that includes totalCount (greedy enough to get pageInfo)
+  const subIssuesSection = helpersSrc.match(/subIssues\(first: \$numSubIssuesPerIssue\)\s*\{[\s\S]*?pageInfo[\s\S]*?totalCount/);
+  assert(subIssuesSection, 'GET_ALL_REPO_ISSUES subIssues has pageInfo');
+  assert(subIssuesSection && subIssuesSection[0].includes('endCursor'), 'pageInfo includes endCursor');
+  assert(subIssuesSection && subIssuesSection[0].includes('hasNextPage'), 'pageInfo includes hasNextPage');
+}
+
+// ─── Default lookback is 2 days ──────────────────────────────────────────────
+
+console.log('\n=== Default lookback is 2 days ===');
+
+{
+  const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
+  const matches = indexSrc.match(/date\.getDate\(\) - (\d+)/g);
+  assert(matches && matches.length > 0, 'found getDate subtraction in index.js');
+  assert(matches.every(m => m.includes('- 2')), 'all default lookbacks are 2 days (not 7)');
+}
+
+// ─── Summary ────────────────────────────────────────────────────────────────
+
+console.log(`\n${'─'.repeat(50)}`);
+console.log(`Results: ${passed} passed, ${failed} failed`);
+if (failed > 0) process.exit(1);

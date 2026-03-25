@@ -46,11 +46,11 @@ function parseArgs() {
           const date = new Date(year, month, day);
           options.since = date.toISOString();
         } else {
-          // Default fallback: 7 days ago
-          console.error(`** ERROR: Invalid date format: ${sinceValue}\nDefaulting to 7 days ago`);
+          // Default fallback: 2 days ago
+          console.error(`** ERROR: Invalid date format: ${sinceValue}\nDefaulting to 2 days ago`);
           options.since = (() => {
             const date = new Date();
-            date.setDate(date.getDate() - 7);
+            date.setDate(date.getDate() - 2);
             return date.toISOString();
           })();
         }
@@ -265,7 +265,7 @@ async function syncIssues(owner, repo, since, direction = 'both') {
 const options = parseArgs();
 const since = options.since || (() => {
   const date = new Date();
-  date.setDate(date.getDate() - 7);
+  date.setDate(date.getDate() - 2);
   return date.toISOString();
 })();
 const direction = options.direction || 'both';
