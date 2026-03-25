@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import exported functions directly
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
-import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData } from '../src/helpers.js';
+import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch } from '../src/helpers.js';
 import { syncStats, errorCollector } from '../src/logging.js';
 
 let passed = 0;
@@ -523,6 +523,36 @@ console.log('\n=== Truncated descriptions never sync back to GitHub ===');
     truncationCheckIdx < updatesBodyIdx,
     'truncation guard appears before body update assignment'
   );
+}
+
+// ─── Paginated Jira search ────────────────────────────────────────────────────
+
+console.log('\n=== Paginated Jira search ===');
+
+{
+  const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+
+  // Verify paginatedJiraSearch exists and uses startAt for pagination
+  assert(helpersSrc.includes('export async function paginatedJiraSearch'), 'paginatedJiraSearch is exported from helpers');
+  assert(helpersSrc.includes('startAt'), 'paginatedJiraSearch uses startAt for pagination');
+  assert(helpersSrc.includes('data.total'), 'paginatedJiraSearch checks total for loop termination');
+
+  // Verify all three fetch functions in index.js use paginatedJiraSearch
+  assert(indexSrc.includes("import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl, paginatedJiraSearch }"),
+    'index.js imports paginatedJiraSearch');
+
+  // Count occurrences of paginatedJiraSearch calls (should be 3: open, closed, manual)
+  const calls = indexSrc.match(/paginatedJiraSearch\(/g);
+  assertEqual(calls?.length, 3, 'index.js calls paginatedJiraSearch 3 times (open, closed, manual)');
+
+  // Verify fetchJiraIssues uses updatedDate filter
+  assert(indexSrc.includes('updatedDate >= ') && indexSrc.includes('status not in (Closed, Resolved)'),
+    'fetchJiraIssues JQL includes updatedDate filter');
+
+  // Verify no raw jiraClient.get search/jql calls remain in index.js
+  const rawCalls = indexSrc.match(/jiraClient\.get\('\/rest\/api\/3\/search\/jql'/g);
+  assertEqual(rawCalls, null, 'no raw jiraClient.get search/jql calls remain in index.js');
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────
