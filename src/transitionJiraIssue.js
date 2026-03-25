@@ -1,5 +1,5 @@
 import { jiraClient, delay } from './helpers.js';
-import { errorCollector } from './index.js';
+import { errorCollector, syncStats } from './logging.js';
 
 export async function transitionJiraIssue(jiraIssueKey, targetState) {
   try {
@@ -24,6 +24,9 @@ export async function transitionJiraIssue(jiraIssueKey, targetState) {
       console.log(
         ` - Transitioned Jira issue ${jiraIssueKey} to ${transition.name}`
       );
+      if (transition.name.toLowerCase() === 'closed') {
+        syncStats.track('jiraClosed');
+      }
     } else {
       console.log(
         `No suitable transition found for issue ${jiraIssueKey} to state ${targetState}`

@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
-import { errorCollector } from './index.js';
+import { errorCollector } from './logging.js';
 import j2m from 'jira2md';
 
 // Initialize Octokit with GraphQL support
@@ -101,6 +101,10 @@ export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
 }
 
 export const delay = (ms = 1000) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+// Shorter delay for read-only GitHub REST calls (rate limit is 5,000/hr)
+export const shortDelay = (ms = 250) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 export const convertMarkdownToJira = (str) => {
@@ -373,19 +377,29 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   // build the Jira issue object to create/update Jira with
   // Updating an issue allows fewer fields than creating new issue
   // Jira v3 expects assignee as { accountId: "..." }, not { name: "..." }
+  const strippedBody = body.replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
+  const metadata = {
+    number,
+    url,
+    reporter: author?.login || '',
+    assignees: assigneeLogins.join(', '),
+  };
+  let description = buildDescriptionADF(strippedBody, metadata);
+  // Truncate description if ADF JSON exceeds 30KB (Jira returns INVALID_INPUT for oversized descriptions)
+  // Ex: Renovate Dependency Dashboard issues with hundreds of dependency listings
+  if (JSON.stringify(description).length > 30000) {
+    console.log(
+      ` - Description for GH #${number} is too large (${JSON.stringify(description).length} bytes). Truncating...`
+    );
+    description = buildDescriptionADF(
+      `Issue description was truncated due to size. Full description available at: [GitHub Issue #${number}](${url})`,
+      metadata
+    );
+  }
   const jiraIssue = {
     fields: {
       summary: title,
-      description: buildDescriptionADF(
-        // Strip Jira link footer so it doesn't pollute the Jira description on subsequent syncs
-        body.replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim(),
-        {
-          number,
-          url,
-          reporter: author?.login || '',
-          assignees: assigneeLogins.join(', '),
-        }
-      ),
+      description,
       labels: ['GitHub', ...jiraLabels],
       ...(jiraAssignee && { assignee: { accountId: jiraAssignee } }),
       issuetype: {
@@ -414,14 +428,63 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
 };
 
 // Helper function to execute GraphQL queries
-export async function executeGraphQLQuery(query, variables, owner = null) {
+// GraphQL uses a point-based rate limit (5,000 points/hr), not request-based,
+// so we use a short delay instead of the full 1-second delay used for REST writes.
+const RATE_LIMIT_MAX_RETRIES = 2;
+const RATE_LIMIT_MAX_WAIT_MS = 5 * 60 * 1000;
+const RATE_LIMIT_MIN_WAIT_MS = 60 * 1000;
+
+export async function executeGraphQLQuery(query, variables, owner = null, _retryCount = 0) {
+  const queryMatch = query.match(/(?:query|mutation)\s+(\w+)/);
+  const queryName = queryMatch ? queryMatch[1] : query.trim().substring(0, 80).replace(/\s+/g, ' ');
   try {
+    await shortDelay();
     // Extract owner from variables if not provided directly
     const ownerToUse = owner || variables?.owner || 'patternfly';
     const octokitInstance = getOctokitForOwner(ownerToUse);
-    const response = await octokitInstance.graphql(query, variables);
-    return response;
+    const fullResponse = await octokitInstance.request('POST /graphql', {
+      query,
+      variables,
+    });
+    const h = fullResponse.headers;
+
+    // Detect rate limit from GraphQL response errors (returns HTTP 200, not 429)
+    const rateLimitError = fullResponse.data.errors?.find(e => e.type === 'RATE_LIMITED');
+    if (rateLimitError) {
+      if (_retryCount < RATE_LIMIT_MAX_RETRIES) {
+        const resetEpoch = parseInt(h['x-ratelimit-reset'], 10);
+        let waitMs = RATE_LIMIT_MIN_WAIT_MS;
+        if (!isNaN(resetEpoch)) {
+          waitMs = (resetEpoch * 1000) - Date.now() + 1000;
+          waitMs = Math.max(RATE_LIMIT_MIN_WAIT_MS, waitMs);
+          waitMs = Math.min(RATE_LIMIT_MAX_WAIT_MS, waitMs);
+        }
+        console.log(`[Rate Limit] ${queryName}: rate limit exceeded. Waiting ${Math.round(waitMs / 1000)}s until reset (retry ${_retryCount + 1}/${RATE_LIMIT_MAX_RETRIES})...`);
+        await delay(waitMs);
+        return executeGraphQLQuery(query, variables, owner, _retryCount + 1);
+      }
+      console.log(`[Rate Limit] ${queryName}: max retries (${RATE_LIMIT_MAX_RETRIES}) exceeded after rate limiting.`);
+      errorCollector.addError('HELPERS: GraphQL rate limit exceeded', rateLimitError);
+      return null;
+    }
+
+    // Warn when budget is getting low
+    const remaining = parseInt(h['x-ratelimit-remaining'], 10);
+    if (!isNaN(remaining) && remaining < 500) {
+      console.log(`[Rate Limit Warning] ${queryName}: ${remaining} points remaining of ${h['x-ratelimit-limit']}`);
+    }
+
+    return fullResponse.data.data;
   } catch (error) {
+    // Handle secondary rate limit (HTTP 403 with retry-after)
+    const retryAfter = error?.response?.headers?.['retry-after'];
+    if (retryAfter && _retryCount < RATE_LIMIT_MAX_RETRIES) {
+      const waitMs = Math.min(parseInt(retryAfter, 10) * 1000 || RATE_LIMIT_MIN_WAIT_MS, RATE_LIMIT_MAX_WAIT_MS);
+      console.log(`[Rate Limit] ${queryName}: secondary rate limit hit. Waiting ${Math.round(waitMs / 1000)}s (retry ${_retryCount + 1}/${RATE_LIMIT_MAX_RETRIES})...`);
+      await delay(waitMs);
+      return executeGraphQLQuery(query, variables, owner, _retryCount + 1);
+    }
+
     errorCollector.addError('HELPERS: GraphQL query execution', error);
     return null;
   }
@@ -438,7 +501,7 @@ export const GET_ALL_REPO_ISSUES = `
     $numLabelsPerIssue: Int = 10
     $numAssigneesPerIssue: Int = 10
     $numCommentsPerIssue: Int = 20
-    $numSubIssuesPerIssue: Int = 100
+    $numSubIssuesPerIssue: Int = 10
     $since: DateTime
   ) {
     repository(owner: $owner, name: $repo) {
@@ -494,6 +557,7 @@ export const GET_ALL_REPO_ISSUES = `
             nodes {
               title
               url
+              body
               state
               number
               issueType {
@@ -524,6 +588,10 @@ export const GET_ALL_REPO_ISSUES = `
                 }
                 totalCount
               }
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
             }
             totalCount
           }
@@ -629,6 +697,75 @@ export const GET_ISSUE_DETAILS = `
   }
 `;
 
+// Query to paginate sub-issues for a single issue
+const FETCH_SUB_ISSUES = `
+  query FetchSubIssues($owner: String!, $repo: String!, $issueNumber: Int!, $first: Int!, $after: String) {
+    repository(owner: $owner, name: $repo) {
+      issue(number: $issueNumber) {
+        subIssues(first: $first, after: $after) {
+          nodes {
+            title
+            url
+            body
+            state
+            number
+            issueType { name }
+            repository { nameWithOwner }
+            assignees(first: 3) { nodes { login } }
+            labels(first: 3) { nodes { name } }
+            comments(first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) {
+              nodes {
+                author { login }
+                body
+                createdAt
+                updatedAt
+                url
+              }
+              totalCount
+            }
+          }
+          pageInfo { endCursor hasNextPage }
+          totalCount
+        }
+      }
+    }
+  }
+`;
+
+// Fetch remaining sub-issues for issues where the initial bulk query was truncated
+async function fetchRemainingSubIssues(issue, owner, repo) {
+  const { subIssues } = issue;
+  if (!subIssues || subIssues.totalCount <= subIssues.nodes.length) {
+    return; // All sub-issues already fetched
+  }
+
+  const total = subIssues.totalCount;
+  const initialCount = subIssues.nodes.length;
+  console.log(`  Issue #${issue.number} has ${total} sub-issues (initial fetch: ${initialCount}), fetching remaining...`);
+
+  let cursor = subIssues.pageInfo?.endCursor;
+  let hasNextPage = subIssues.pageInfo?.hasNextPage ?? false;
+
+  while (hasNextPage && subIssues.nodes.length < total) {
+    const response = await executeGraphQLQuery(FETCH_SUB_ISSUES, {
+      owner,
+      repo,
+      issueNumber: issue.number,
+      first: 50,
+      after: cursor,
+    }, owner);
+
+    const page = response?.repository?.issue?.subIssues;
+    if (!page?.nodes?.length) break;
+
+    subIssues.nodes.push(...page.nodes);
+    cursor = page.pageInfo?.endCursor;
+    hasNextPage = page.pageInfo?.hasNextPage ?? false;
+  }
+
+  console.log(`  Issue #${issue.number}: fetched ${subIssues.nodes.length}/${total} sub-issues`);
+}
+
 export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
   // Validate environment variables
   if (!repo) {
@@ -670,9 +807,9 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
       hasNextPage = pageInfo.hasNextPage;
       cursor = pageInfo.endCursor;
 
-      // Add a delay between requests to avoid rate limiting
+      // Add a short delay between paginated reads to avoid secondary rate limiting
       if (hasNextPage) {
-        await delay(1000);
+        await shortDelay();
       }
 
       // Reset retry count on successful request
@@ -702,6 +839,13 @@ export async function getRepoIssues(repo, ghOwner = 'patternfly', since) {
 
       // Handle other errors
       throw new Error(`Failed to fetch GitHub issues: ${error.message}`);
+    }
+  }
+
+  // Fetch remaining sub-issues for any issues that had more than the initial limit
+  for (const issue of allIssues) {
+    if (issue.subIssues?.totalCount > issue.subIssues?.nodes?.length) {
+      await fetchRemainingSubIssues(issue, ghOwner, repo);
     }
   }
 
@@ -1358,7 +1502,7 @@ export function extractJiraKeyFromText(text) {
 // Fetch a specific Jira issue by key (works even if archived)
 export async function fetchJiraIssueByKey(issueKey) {
   try {
-    await delay();
+    await shortDelay();
     const response = await jiraClient.get(`/rest/api/3/issue/${issueKey}`, {
       params: {
         fields: 'key,id,description,status,assignee,issuetype,updated,summary,components,archiveddate',
@@ -1543,8 +1687,8 @@ export async function closeGitHubIssue(owner, repo, issueNumber) {
 
 export async function syncCommentsToJira(jiraIssueKey, githubComments) {
   try {
-    // Get existing comments from Jira
-    await delay();
+    // Get existing comments from Jira (read-only, use shorter delay)
+    await shortDelay();
     const { data: jiraComments } = await jiraClient.get(
       `/rest/api/3/issue/${jiraIssueKey}/comment`
     );

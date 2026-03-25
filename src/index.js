@@ -10,6 +10,7 @@ import {
   checkAndHandleArchivedJiraIssue,
   syncUpdatedJiraIssuesToGitHub,
 } from './syncJiraToGitHub.js';
+import { errorCollector, syncStats } from './logging.js';
 
 export let jiraIssues = [];
 
@@ -45,11 +46,11 @@ function parseArgs() {
           const date = new Date(year, month, day);
           options.since = date.toISOString();
         } else {
-          // Default fallback: 7 days ago
-          console.error(`** ERROR: Invalid date format: ${sinceValue}\nDefaulting to 7 days ago`);
+          // Default fallback: 2 days ago
+          console.error(`** ERROR: Invalid date format: ${sinceValue}\nDefaulting to 2 days ago`);
           options.since = (() => {
             const date = new Date();
-            date.setDate(date.getDate() - 7);
+            date.setDate(date.getDate() - 2);
             return date.toISOString();
           })();
         }
@@ -82,45 +83,6 @@ function parseArgs() {
   
   return options;
 }
-
-// Error collector to store errors with context
-class ErrorCollector {
-  constructor() {
-    this.errors = [];
-  }
-
-  addError(context, error) {
-    this.errors.push({
-      context,
-      message: error.message,
-      response: error?.response?.data,
-      stack: error.stack,
-    });
-  }
-
-  hasErrors() {
-    return this.errors.length > 0;
-  }
-
-  logErrors() {
-    if (!this.hasErrors()) return;
-
-    this.errors.forEach(({ context, message, response }) => {
-      console.error(`  ${context}: ${message}`);
-      if (response) {
-        console.error(`  Response: ${JSON.stringify(response)}`);
-      }
-      console.error('  ==============================================');
-    });
-  }
-
-  clear() {
-    this.errors = [];
-  }
-}
-
-// Create global error collector instance
-export const errorCollector = new ErrorCollector();
 
 const fetchJiraIssues = async (owner, repo, since) => {
   console.log(' - fetching Jira...');
@@ -164,7 +126,7 @@ const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
     params: {
       jql: `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
       maxResults: 1000,
-      fields: 'key,id,summary,description,status,assignee,issuetype,reporter,components,updated',
+      fields: 'key,id,summary,description,status,resolution,assignee,issuetype,reporter,components,updated',
     },
   });
   const allIssues = response?.data?.issues || [];
@@ -190,6 +152,7 @@ const fetchGitHubIssues = async (owner, repo, since) => {
 
 async function syncIssues(owner, repo, since, direction = 'both') {
   console.log(`\n\n=== START Syncing issues for repo ${ owner }/${ repo } updated since ${since} (direction: ${direction}) ===\n\n`);
+  syncStats.setCurrentRepo(`${owner}/${repo}`);
   try {
     // Clear any previous errors
     // errorCollector.clear();
@@ -284,6 +247,10 @@ async function syncIssues(owner, repo, since, direction = 'both') {
     errorCollector.addError('INDEX: Sync process', error);
   } finally {
     if (errorCollector.hasErrors()) {
+      // Track error count before clearing
+      for (let i = 0; i < errorCollector.errors.length; i++) {
+        syncStats.track('errors');
+      }
       // Log any collected errors at the end
       console.log(`\n=== ${repo.toUpperCase()} ERRORS ===\n`);
       errorCollector.logErrors();
@@ -298,7 +265,7 @@ async function syncIssues(owner, repo, since, direction = 'both') {
 const options = parseArgs();
 const since = options.since || (() => {
   const date = new Date();
-  date.setDate(date.getDate() - 7);
+  date.setDate(date.getDate() - 2);
   return date.toISOString();
 })();
 const direction = options.direction || 'both';
@@ -310,3 +277,5 @@ console.log(`Sync direction: ${direction}`);
 for (const {name, owner} of availableComponents) {
   await syncIssues(owner, name, since, direction);
 }
+
+syncStats.printSummary();

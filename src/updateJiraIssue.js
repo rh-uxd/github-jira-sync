@@ -3,20 +3,22 @@ import {
   jiraClient,
   editJiraIssue,
   delay,
+  shortDelay,
   syncCommentsToJira,
   shouldSyncFromGitHub,
   extractTextFromADF,
   adfToMarkdown,
+  executeGraphQLQuery,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
 import { findJiraIssue } from './findJiraIssue.js';
-import { errorCollector } from './index.js';
-import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleToGitHub, syncDescriptionToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened } from './syncJiraToGitHub.js';
+import { errorCollector, syncStats } from './logging.js';
+import { syncAssigneeToGitHub, addJiraLinkToGitHub, syncTitleAndDescriptionToGitHub, closeGitHubIssueIfJiraClosed, reopenGitHubIssueIfJiraReopened, parseGitHubUrl, buildBatchedIssueStateQuery } from './syncJiraToGitHub.js';
 
 async function findChildIssues(jiraIssueKey) {
   try {
-    await delay();
+    await shortDelay();
     const response = await jiraClient.get('/rest/api/3/search/jql', {
       params: {
         jql: `parent = ${jiraIssueKey}`,
@@ -123,25 +125,54 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
       );
     }
 
-    // Close any remaining Jira child issues that no longer exist in GitHub,
-    // but ONLY if we fetched all sub-issues from GitHub. If the response was
-    // truncated by pagination, unmatched Jira children may simply be beyond
-    // the page limit — closing them would be incorrect.
+    // Close Jira child issues whose corresponding GitHub issues are actually closed.
+    // Important: Do NOT close Jira children just because they aren't sub-issues of
+    // the parent GitHub issue — the Jira parent-child hierarchy can legitimately
+    // differ from GitHub's sub-issue hierarchy.
     const fetchedCount = githubIssue?.subIssues?.nodes?.length ?? 0;
     const totalCount = githubIssue?.subIssues?.totalCount ?? 0;
     const allSubIssuesFetched = fetchedCount >= totalCount;
 
-    if (allSubIssuesFetched) {
-      for (const [_, child] of existingChildIssuesMap) {
-        if (child.fields?.status?.name === 'Closed') {
-          continue; // Already closed, skip to avoid redundant transition
+    if (allSubIssuesFetched && existingChildIssuesMap.size > 0) {
+      // Filter to only open Jira children that need checking
+      const unmatchedChildren = [...existingChildIssuesMap.entries()]
+        .filter(([_, child]) => child.fields?.status?.name !== 'Closed');
+
+      if (unmatchedChildren.length > 0) {
+        // Parse URLs and prepare batch query
+        const toCheck = unmatchedChildren
+          .map(([url, child], i) => ({ url, child, parsed: parseGitHubUrl(url), alias: `child_${i}` }))
+          .filter(item => item.parsed);
+
+        if (toCheck.length > 0) {
+          // Batch fetch GitHub issue states
+          const issueRequests = toCheck.map(({ alias, parsed }) => ({
+            alias,
+            owner: parsed.owner,
+            repo: parsed.repo,
+            issueNumber: parsed.issueNumber,
+          }));
+          const query = buildBatchedIssueStateQuery(issueRequests);
+          const batchOwner = issueRequests[0].owner;
+          const response = await executeGraphQLQuery(query, {}, batchOwner);
+
+          for (const item of toCheck) {
+            const ghIssue = response?.[item.alias]?.issue;
+            if (ghIssue?.state === 'CLOSED') {
+              await transitionJiraIssue(item.child.key, 'Closed');
+              console.log(
+                ` - Closed child issue ${item.child.key} as its GitHub issue is closed`
+              );
+            } else {
+              console.log(
+                ` - Skipping close of child issue ${item.child.key}: GitHub issue is still open (not a sub-issue of parent)`
+              );
+              syncStats.track('warnings', { key: item.child.key, message: 'GitHub issue is still open (not a sub-issue of parent)' });
+            }
+          }
         }
-        await transitionJiraIssue(child.key, 'Closed');
-        console.log(
-          ` - Closed child issue ${child.key} as it's no longer open in GitHub`
-        );
       }
-    } else if (existingChildIssuesMap.size > 0) {
+    } else if (!allSubIssuesFetched && existingChildIssuesMap.size > 0) {
       console.log(
         ` - ⚠ Skipping cleanup of ${existingChildIssuesMap.size} unmatched Jira child issues: ` +
           `only ${fetchedCount} of ${totalCount} GitHub sub-issues were fetched (pagination limit). ` +
@@ -206,21 +237,33 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       }
 
       // Compare description to avoid unnecessary writes and feedback loops.
-      // Normalize both sides the same way to ignore ADF roundtrip whitespace artifacts
-      // (e.g. blank lines added after headings, leading spaces stripped by Jira).
-      const normalizeForCompare = (text) => String(text || '')
-        .replace(/\r\n/g, '\n')
-        .replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi, '![image]($1)')  // normalize HTML img to markdown (ADF roundtrip)
-        .replace(/[ \t]+$/gm, '')
-        .replace(/^[ \t]+/gm, '')
-        .replace(/\n{3,}/g, '\n\n')
-        .replace(/^(#{1,6} [^\n]+)\n(?!\n)/gm, '$1\n\n')
-        .trim();
+      // If the Jira description is already truncated and the new one is also truncated,
+      // skip the update to avoid rewriting the same truncation notice every sync.
       const currentJiraMarkdown = adfToMarkdown(jiraIssue.fields.description, { stripMetadata: true });
-      const githubBodyClean = (githubIssue.body || '')
-        .replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
-      const descriptionChanged =
-        normalizeForCompare(currentJiraMarkdown) !== normalizeForCompare(githubBodyClean);
+      const isTruncated = currentJiraMarkdown.includes('Issue description was truncated due to size');
+      const newDescIsTruncated = !jiraIssueData.fields.description ||
+        extractTextFromADF(jiraIssueData.fields.description).includes('Issue description was truncated due to size');
+
+      let descriptionChanged;
+      if (isTruncated && newDescIsTruncated) {
+        // Both truncated — no meaningful change
+        descriptionChanged = false;
+      } else {
+        // Normalize both sides the same way to ignore ADF roundtrip whitespace artifacts
+        // (e.g. blank lines added after headings, leading spaces stripped by Jira).
+        const normalizeForCompare = (text) => String(text || '')
+          .replace(/\r\n/g, '\n')
+          .replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi, '![image]($1)')  // normalize HTML img to markdown (ADF roundtrip)
+          .replace(/[ \t]+$/gm, '')
+          .replace(/^[ \t]+/gm, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .replace(/^(#{1,6} [^\n]+)\n(?!\n)/gm, '$1\n\n')
+          .trim();
+        const githubBodyClean = (githubIssue.body || '')
+          .replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
+        descriptionChanged =
+          normalizeForCompare(currentJiraMarkdown) !== normalizeForCompare(githubBodyClean);
+      }
       if (!descriptionChanged) {
         delete jiraIssueData.fields.description;
       }
@@ -273,18 +316,17 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
 
     // Reverse sync: Always attempt to sync from Jira to GitHub
     // These functions check timestamps internally and will skip if GitHub is newer
-    // title, description, and assignee target independent fields/endpoints — run in parallel
-    const [titleResult, descriptionResult, assigneeResult] = await Promise.all([
-      syncTitleToGitHub(jiraIssue, githubIssue),
-      syncDescriptionToGitHub(jiraIssue, githubIssue),
+    // Combined title+description into a single REST call; assignee uses a separate endpoint
+    const [titleDescResult, assigneeResult] = await Promise.all([
+      syncTitleAndDescriptionToGitHub(jiraIssue, githubIssue),
       syncAssigneeToGitHub(jiraIssue, githubIssue),
     ]);
-    if (titleResult) syncSummary.jiraToGitHub.title = true;
-    if (descriptionResult) syncSummary.jiraToGitHub.description = true;
+    if (titleDescResult.title) syncSummary.jiraToGitHub.title = true;
+    if (titleDescResult.description) syncSummary.jiraToGitHub.description = true;
     if (assigneeResult) syncSummary.jiraToGitHub.assignee = true;
 
     // Skip adding Jira link when description was just updated – the new body already includes the canonical footer
-    if (!descriptionResult) {
+    if (!titleDescResult.description) {
       const linkResult = await addJiraLinkToGitHub(jiraIssue.key, githubIssue);
       if (linkResult) syncSummary.jiraToGitHub.link = true;
     }

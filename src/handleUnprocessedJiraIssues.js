@@ -6,7 +6,7 @@ import {
   extractTextFromADF,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
-import { errorCollector } from './index.js';
+import { errorCollector } from './logging.js';
 
 // Additional check only for unprocessed Jira issues
 // Find their GH issue and see if Jira issue needs to be transitioned to match GH state
