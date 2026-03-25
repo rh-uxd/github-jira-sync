@@ -218,7 +218,7 @@ export const getJiraIssueType = (ghIssueType) =>
   issueTypeMappings[ghIssueType?.name] || issueTypeMappings.default;
 
 export const availableComponents = [
-  /*{
+  {
     name: 'AI-infra-ui-components',
     owner: 'patternfly',
   },
@@ -257,11 +257,11 @@ export const availableComponents = [
   {
     name: 'patternfly-design',
     owner: 'patternfly',
-  },*/
+  },
   {
     name: 'patternfly-design-kit',
     owner: 'patternfly',
-  },/*
+  },
   {
     name: 'patternfly-doc-core',
     owner: 'patternfly',
@@ -297,11 +297,11 @@ export const availableComponents = [
   {
     name: 'pf-codemods',
     owner: 'patternfly',
-  },*/
+  },
   {
     name: 'pf-roadmap',
     owner: 'patternfly',
-  },/*
+  },
   {
     name: 'react-catalog-view',
     owner: 'patternfly',
@@ -341,7 +341,7 @@ export const availableComponents = [
   {
     name: 'jira-weekly-report',
     owner: 'rh-uxd'
-  }*/
+  }
 ];
 
 export const getJiraComponent = (repoName) =>
@@ -377,19 +377,29 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   // build the Jira issue object to create/update Jira with
   // Updating an issue allows fewer fields than creating new issue
   // Jira v3 expects assignee as { accountId: "..." }, not { name: "..." }
+  const strippedBody = body.replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
+  const metadata = {
+    number,
+    url,
+    reporter: author?.login || '',
+    assignees: assigneeLogins.join(', '),
+  };
+  let description = buildDescriptionADF(strippedBody, metadata);
+  // Truncate description if ADF JSON exceeds 30KB (Jira returns INVALID_INPUT for oversized descriptions)
+  // Ex: Renovate Dependency Dashboard issues with hundreds of dependency listings
+  if (JSON.stringify(description).length > 30000) {
+    console.log(
+      ` - Description for GH #${number} is too large (${JSON.stringify(description).length} bytes). Truncating...`
+    );
+    description = buildDescriptionADF(
+      `Issue description was truncated due to size. Full description available at: [GitHub Issue #${number}](${url})`,
+      metadata
+    );
+  }
   const jiraIssue = {
     fields: {
       summary: title,
-      description: buildDescriptionADF(
-        // Strip Jira link footer so it doesn't pollute the Jira description on subsequent syncs
-        body.replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim(),
-        {
-          number,
-          url,
-          reporter: author?.login || '',
-          assignees: assigneeLogins.join(', '),
-        }
-      ),
+      description,
       labels: ['GitHub', ...jiraLabels],
       ...(jiraAssignee && { assignee: { accountId: jiraAssignee } }),
       issuetype: {

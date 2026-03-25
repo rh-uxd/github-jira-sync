@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import exported functions directly
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
-import { extractTextFromADF, extractUpstreamUrl } from '../src/helpers.js';
+import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData } from '../src/helpers.js';
 import { syncStats, errorCollector } from '../src/logging.js';
 
 let passed = 0;
@@ -406,6 +406,123 @@ console.log('\n=== Default lookback is 2 days ===');
   const matches = indexSrc.match(/date\.getDate\(\) - (\d+)/g);
   assert(matches && matches.length > 0, 'found getDate subtraction in index.js');
   assert(matches.every(m => m.includes('- 2')), 'all default lookbacks are 2 days (not 7)');
+}
+
+// ─── Description truncation for oversized issues ─────────────────────────────
+
+console.log('\n=== Description truncation for oversized issues ===');
+
+{
+  // Build a GitHub issue with a small body — should NOT be truncated
+  const smallIssue = {
+    title: 'Small issue',
+    url: 'https://github.com/patternfly/patternfly-react/issues/100',
+    body: 'This is a small issue body.',
+    number: 100,
+    labels: { nodes: [] },
+    assignees: { nodes: [] },
+    author: { login: 'testuser' },
+    issueType: null,
+  };
+
+  const smallResult = buildJiraIssueData(smallIssue, false);
+  const smallText = extractTextFromADF(smallResult.fields.description);
+  assert(!smallText.includes('truncated due to size'), 'small issue is NOT truncated');
+  assert(smallText.includes('small issue body'), 'small issue body is preserved');
+}
+
+{
+  // Build a GitHub issue with an oversized body (>30KB when converted to ADF)
+  // Simulate a Dependency Dashboard with hundreds of checkbox items
+  const lines = [];
+  for (let i = 0; i < 500; i++) {
+    lines.push(`- [ ] chore(deps): update dependency @some-very-long-scoped/package-name-${i} to ^${i}.0.0`);
+  }
+  const largeBody = '## Dependency Dashboard\n\n' + lines.join('\n');
+
+  const largeIssue = {
+    title: 'Dependency Dashboard',
+    url: 'https://github.com/patternfly/patternfly-react/issues/6246',
+    body: largeBody,
+    number: 6246,
+    labels: { nodes: [{ name: 'Spike' }] },
+    assignees: { nodes: [] },
+    author: { login: 'renovate[bot]' },
+    issueType: null,
+  };
+
+  const largeResult = buildJiraIssueData(largeIssue, false);
+  const largeDescJson = JSON.stringify(largeResult.fields.description);
+  assert(largeDescJson.length < 30000, 'truncated description is under 30KB: ' + largeDescJson.length + ' bytes');
+
+  const largeText = extractTextFromADF(largeResult.fields.description);
+  assert(largeText.includes('truncated due to size'), 'oversized issue contains truncation notice');
+  assert(largeText.includes('6246'), 'truncation notice includes issue number');
+  assert(largeText.includes('github.com/patternfly/patternfly-react/issues/6246'), 'truncation notice includes GitHub URL');
+
+  // Verify the GitHub link is a proper ADF link node (not plain text)
+  const descContent = largeResult.fields.description.content;
+  const truncationParagraph = descContent.find(
+    (block) => block.type === 'paragraph' && block.content?.some(
+      (node) => node.text && node.text.includes('truncated due to size')
+    )
+  );
+  assert(truncationParagraph, 'truncation notice is in a paragraph block');
+  const linkNode = truncationParagraph.content.find(
+    (node) => node.marks?.some((m) => m.type === 'link')
+  );
+  assert(linkNode, 'truncation notice contains an ADF link node');
+  assert(
+    linkNode.marks[0].attrs.href === 'https://github.com/patternfly/patternfly-react/issues/6246',
+    'ADF link href points to GitHub issue'
+  );
+  assertEqual(linkNode.text, 'GitHub Issue #6246', 'ADF link text is correct');
+}
+
+{
+  // Verify truncation works the same for updates (isUpdateIssue = true)
+  const lines = [];
+  for (let i = 0; i < 500; i++) {
+    lines.push(`- [ ] fix(deps): update dependency package-${i} to ^${i}.0.0`);
+  }
+
+  const updateIssue = {
+    title: 'Dependency Dashboard',
+    url: 'https://github.com/patternfly/patternfly-react/issues/6246',
+    body: '## Dashboard\n\n' + lines.join('\n'),
+    number: 6246,
+    labels: { nodes: [] },
+    assignees: { nodes: [] },
+    author: { login: 'renovate[bot]' },
+    issueType: null,
+  };
+
+  const updateResult = buildJiraIssueData(updateIssue, true);
+  const updateText = extractTextFromADF(updateResult.fields.description);
+  assert(updateText.includes('truncated due to size'), 'update mode also truncates oversized descriptions');
+}
+
+// ─── Truncated descriptions don't sync back to GitHub ────────────────────────
+
+console.log('\n=== Truncated descriptions never sync back to GitHub ===');
+
+{
+  const syncSrc = readFileSync(join(__dirname, '../src/syncJiraToGitHub.js'), 'utf-8');
+
+  // Verify syncTitleAndDescriptionToGitHub checks for truncation before syncing description
+  assert(
+    syncSrc.includes("Issue description was truncated due to size"),
+    'syncTitleAndDescriptionToGitHub checks for truncation notice'
+  );
+
+  // Verify the truncation check prevents updating the body
+  // The guard should be before the `updates.body = newBody` assignment
+  const truncationCheckIdx = syncSrc.indexOf('Issue description was truncated due to size');
+  const updatesBodyIdx = syncSrc.indexOf('updates.body = newBody');
+  assert(
+    truncationCheckIdx < updatesBodyIdx,
+    'truncation guard appears before body update assignment'
+  );
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

@@ -237,21 +237,33 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       }
 
       // Compare description to avoid unnecessary writes and feedback loops.
-      // Normalize both sides the same way to ignore ADF roundtrip whitespace artifacts
-      // (e.g. blank lines added after headings, leading spaces stripped by Jira).
-      const normalizeForCompare = (text) => String(text || '')
-        .replace(/\r\n/g, '\n')
-        .replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi, '![image]($1)')  // normalize HTML img to markdown (ADF roundtrip)
-        .replace(/[ \t]+$/gm, '')
-        .replace(/^[ \t]+/gm, '')
-        .replace(/\n{3,}/g, '\n\n')
-        .replace(/^(#{1,6} [^\n]+)\n(?!\n)/gm, '$1\n\n')
-        .trim();
+      // If the Jira description is already truncated and the new one is also truncated,
+      // skip the update to avoid rewriting the same truncation notice every sync.
       const currentJiraMarkdown = adfToMarkdown(jiraIssue.fields.description, { stripMetadata: true });
-      const githubBodyClean = (githubIssue.body || '')
-        .replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
-      const descriptionChanged =
-        normalizeForCompare(currentJiraMarkdown) !== normalizeForCompare(githubBodyClean);
+      const isTruncated = currentJiraMarkdown.includes('Issue description was truncated due to size');
+      const newDescIsTruncated = !jiraIssueData.fields.description ||
+        extractTextFromADF(jiraIssueData.fields.description).includes('Issue description was truncated due to size');
+
+      let descriptionChanged;
+      if (isTruncated && newDescIsTruncated) {
+        // Both truncated — no meaningful change
+        descriptionChanged = false;
+      } else {
+        // Normalize both sides the same way to ignore ADF roundtrip whitespace artifacts
+        // (e.g. blank lines added after headings, leading spaces stripped by Jira).
+        const normalizeForCompare = (text) => String(text || '')
+          .replace(/\r\n/g, '\n')
+          .replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi, '![image]($1)')  // normalize HTML img to markdown (ADF roundtrip)
+          .replace(/[ \t]+$/gm, '')
+          .replace(/^[ \t]+/gm, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .replace(/^(#{1,6} [^\n]+)\n(?!\n)/gm, '$1\n\n')
+          .trim();
+        const githubBodyClean = (githubIssue.body || '')
+          .replace(/\n{0,2}-{3,}\n{0,2}\*\*Jira Issue:\*\*[^\n]*/g, '').trim();
+        descriptionChanged =
+          normalizeForCompare(currentJiraMarkdown) !== normalizeForCompare(githubBodyClean);
+      }
       if (!descriptionChanged) {
         delete jiraIssueData.fields.description;
       }

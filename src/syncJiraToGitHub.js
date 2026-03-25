@@ -240,13 +240,17 @@ export async function syncTitleAndDescriptionToGitHub(jiraIssue, githubIssue) {
     // Check description
     const markdownDescription = jiraDescriptionToMarkdown(jiraIssue.fields.description);
     const cleanDescription = markdownDescription.replace(/(\n-{3,})+\s*$/, '').trim();
-    const newBody = `${cleanDescription}${jiraLinkFooter(jiraIssue.key)}`;
 
-    const currentBody = normalizeBody(githubIssue.body);
-    const proposedBody = normalizeBody(newBody);
-    if (currentBody !== proposedBody) {
-      updates.body = newBody;
-      result.description = true;
+    // Don't sync truncated Jira descriptions back to GitHub — GitHub has the full content
+    if (!cleanDescription.includes('Issue description was truncated due to size')) {
+      const newBody = `${cleanDescription}${jiraLinkFooter(jiraIssue.key)}`;
+
+      const currentBody = normalizeBody(githubIssue.body);
+      const proposedBody = normalizeBody(newBody);
+      if (currentBody !== proposedBody) {
+        updates.body = newBody;
+        result.description = true;
+      }
     }
 
     // Skip if nothing changed
