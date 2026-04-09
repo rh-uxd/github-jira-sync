@@ -365,6 +365,10 @@ export const availableComponents = [
   {
     name: 'jira-weekly-report',
     owner: 'rh-uxd'
+  },
+  {
+    name: 'patternfly-analytics',
+    owner: 'rh-uxd'
   }
 ];
 
