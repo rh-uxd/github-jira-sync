@@ -89,7 +89,7 @@ const fetchJiraIssues = async (owner, repo, since) => {
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const jiraIssues = await paginatedJiraSearch(
     `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) AND updatedDate >= "${jiraDate}" ORDER BY key ASC`,
-    'key,id,description,status,assignee,issuetype,updated,summary,components'
+    'key,id,description,status,resolution,assignee,issuetype,updated,summary,components,reporter'
   );
   console.log(`    --> Found ${jiraIssues.length} open Jira issues updated since ${since} for Jira component ${ repo }`);
   return jiraIssues;
@@ -211,8 +211,9 @@ async function syncIssues(owner, repo, since, direction = 'both') {
       const recentlyUpdatedJiraIssues = jiraIssues.filter(
         (issue) => !processedJiraIssues.has(issue.key)
       );
+      let jiraIssuesWithoutUpstream = [];
       if (recentlyUpdatedJiraIssues.length > 0) {
-        await syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner);
+        jiraIssuesWithoutUpstream = await syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner) || [];
       } else {
         console.log(`  No recently-updated Jira issues to sync.`);
       }
@@ -227,8 +228,16 @@ async function syncIssues(owner, repo, since, direction = 'both') {
       // Fetch manually created Jira issues for this component and create GitHub issues
       console.log(`\n= Jira → GitHub sync: manually created Jira issues since ${since} =\n`);
       const manualJiraIssues = await fetchManuallyCreatedJiraIssues(owner, repo, since);
-      if (manualJiraIssues.length > 0) {
-        await createGitHubIssuesForManualJira(manualJiraIssues);
+      // Combine manually-created issues with recently-updated issues that have no upstream URL
+      // Deduplicate by Jira key to avoid double-processing
+      const manualKeys = new Set(manualJiraIssues.map(i => i.key));
+      const additionalIssues = jiraIssuesWithoutUpstream.filter(i => !manualKeys.has(i.key));
+      const allManualJiraIssues = [...manualJiraIssues, ...additionalIssues];
+      if (additionalIssues.length > 0) {
+        console.log(`  Found ${additionalIssues.length} recently-updated Jira issue(s) without Upstream URL — will create GitHub issues`);
+      }
+      if (allManualJiraIssues.length > 0) {
+        await createGitHubIssuesForManualJira(allManualJiraIssues);
       }
     }
   } catch (error) {

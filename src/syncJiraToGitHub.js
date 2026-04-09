@@ -757,13 +757,19 @@ export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, r
       `  Found ${recentlyUpdatedJiraIssues.length} recently-updated Jira issue(s) not already processed. Syncing to GitHub...`
     );
 
+    // Collect Jira issues that have no upstream URL — these need GitHub issues created
+    const issuesWithoutUpstream = [];
+
     // Phase 1: Collect all GitHub issue URLs and batch-fetch them
     const issueRequests = [];
     const jiraIssuesByAlias = new Map();
 
     for (const jiraIssue of recentlyUpdatedJiraIssues) {
       const githubUrl = extractUpstreamUrl(jiraIssue.fields.description);
-      if (!githubUrl) continue;
+      if (!githubUrl) {
+        issuesWithoutUpstream.push(jiraIssue);
+        continue;
+      }
 
       const parsed = parseGitHubUrl(githubUrl);
       if (!parsed) {
@@ -783,7 +789,7 @@ export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, r
 
     if (issueRequests.length === 0) {
       console.log(`  No Jira issues with GitHub links to sync.`);
-      return;
+      return issuesWithoutUpstream;
     }
 
     // Batch fetch in groups of 20 to stay within GraphQL complexity limits
@@ -871,11 +877,14 @@ export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, r
         );
       }
     }
+
+    return issuesWithoutUpstream;
   } catch (error) {
     errorCollector.addError(
       'SYNCJIRATOGITHUB: Error processing recently-updated Jira issues',
       error
     );
+    return [];
   }
 }
 

@@ -555,6 +555,66 @@ console.log('\n=== Paginated Jira search ===');
   assertEqual(rawCalls, null, 'no raw jiraClient.get search/jql calls remain in index.js');
 }
 
+// ─── Old Jira issues without Upstream URL get GitHub issues created ──────────
+
+console.log('\n=== Old Jira issues without Upstream URL get GitHub issues created ===');
+
+{
+  // Verify syncUpdatedJiraIssuesToGitHub collects issues without upstream URL
+  const syncSrc = readFileSync(join(__dirname, '../src/syncJiraToGitHub.js'), 'utf-8');
+
+  assert(syncSrc.includes('const issuesWithoutUpstream = []'),
+    'syncUpdatedJiraIssuesToGitHub declares issuesWithoutUpstream array');
+  assert(syncSrc.includes('issuesWithoutUpstream.push(jiraIssue)'),
+    'syncUpdatedJiraIssuesToGitHub collects issues without upstream URL');
+  assert(syncSrc.includes('return issuesWithoutUpstream'),
+    'syncUpdatedJiraIssuesToGitHub returns issuesWithoutUpstream');
+}
+
+{
+  // Verify index.js captures the return value and merges with manual issues
+  const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
+
+  assert(indexSrc.includes('jiraIssuesWithoutUpstream = await syncUpdatedJiraIssuesToGitHub'),
+    'index.js captures return value of syncUpdatedJiraIssuesToGitHub');
+  assert(indexSrc.includes("manualKeys"),
+    'index.js deduplicates by Jira key');
+  assert(indexSrc.includes('allManualJiraIssues'),
+    'index.js combines manual and upstream-less issues');
+}
+
+{
+  // Verify fetchJiraIssues fetches resolution and reporter fields
+  const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
+  const fetchJiraMatch = indexSrc.match(/paginatedJiraSearch\(\s*`project = PF AND component.*?status not in.*?`,\s*'([^']*)'/s);
+  assert(fetchJiraMatch, 'found fetchJiraIssues paginatedJiraSearch call');
+  assert(fetchJiraMatch[1].includes('resolution'), 'fetchJiraIssues fields include resolution');
+  assert(fetchJiraMatch[1].includes('reporter'), 'fetchJiraIssues fields include reporter');
+}
+
+{
+  // Test deduplication logic: issues appearing in both lists should not be doubled
+  const manualJiraIssues = [
+    { key: 'PF-100', fields: { summary: 'Issue 100' } },
+    { key: 'PF-101', fields: { summary: 'Issue 101' } },
+  ];
+  const jiraIssuesWithoutUpstream = [
+    { key: 'PF-101', fields: { summary: 'Issue 101 (from updated)' } },
+    { key: 'PF-102', fields: { summary: 'Issue 102' } },
+  ];
+
+  const manualKeys = new Set(manualJiraIssues.map(i => i.key));
+  const additionalIssues = jiraIssuesWithoutUpstream.filter(i => !manualKeys.has(i.key));
+  const allManualJiraIssues = [...manualJiraIssues, ...additionalIssues];
+
+  assertEqual(allManualJiraIssues.length, 3, 'deduplication: 3 unique issues (not 4)');
+  assertEqual(additionalIssues.length, 1, 'deduplication: only PF-102 is additional');
+  assertEqual(additionalIssues[0].key, 'PF-102', 'deduplication: additional issue is PF-102');
+  // Manual issues take priority (they have more fields like reporter, resolution)
+  const pf101 = allManualJiraIssues.find(i => i.key === 'PF-101');
+  assertEqual(pf101.fields.summary, 'Issue 101', 'deduplication: manual version of PF-101 takes priority');
+}
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${'─'.repeat(50)}`);
