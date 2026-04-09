@@ -752,6 +752,9 @@ function buildBatchedIssueDetailsQuery(issueRequests) {
 // corresponding GitHub issues were NOT fetched in the GitHub-driven loop
 // (e.g., the GitHub issue wasn't updated recently enough to appear in the fetch).
 export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner) {
+  // Collect Jira issues that have no upstream URL — these need GitHub issues created
+  const issuesWithoutUpstream = [];
+
   try {
     console.log(
       `  Found ${recentlyUpdatedJiraIssues.length} recently-updated Jira issue(s) not already processed. Syncing to GitHub...`
@@ -763,7 +766,10 @@ export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, r
 
     for (const jiraIssue of recentlyUpdatedJiraIssues) {
       const githubUrl = extractUpstreamUrl(jiraIssue.fields.description);
-      if (!githubUrl) continue;
+      if (!githubUrl) {
+        issuesWithoutUpstream.push(jiraIssue);
+        continue;
+      }
 
       const parsed = parseGitHubUrl(githubUrl);
       if (!parsed) {
@@ -783,7 +789,7 @@ export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, r
 
     if (issueRequests.length === 0) {
       console.log(`  No Jira issues with GitHub links to sync.`);
-      return;
+      return issuesWithoutUpstream;
     }
 
     // Batch fetch in groups of 20 to stay within GraphQL complexity limits
@@ -871,11 +877,14 @@ export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, r
         );
       }
     }
+
+    return issuesWithoutUpstream;
   } catch (error) {
     errorCollector.addError(
       'SYNCJIRATOGITHUB: Error processing recently-updated Jira issues',
       error
     );
+    return issuesWithoutUpstream;
   }
 }
 
