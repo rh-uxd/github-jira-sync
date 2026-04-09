@@ -213,7 +213,7 @@ async function syncIssues(owner, repo, since, direction = 'both') {
       );
       let jiraIssuesWithoutUpstream = [];
       if (recentlyUpdatedJiraIssues.length > 0) {
-        jiraIssuesWithoutUpstream = await syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner) || [];
+        jiraIssuesWithoutUpstream = await syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner);
       } else {
         console.log(`  No recently-updated Jira issues to sync.`);
       }

@@ -569,10 +569,22 @@ console.log('\n=== Old Jira issues without Upstream URL get GitHub issues create
     'syncUpdatedJiraIssuesToGitHub collects issues without upstream URL');
   assert(syncSrc.includes('return issuesWithoutUpstream'),
     'syncUpdatedJiraIssuesToGitHub returns issuesWithoutUpstream');
+
+  // Verify issuesWithoutUpstream is declared outside the try block so catch can access it
+  const declIdx = syncSrc.indexOf('const issuesWithoutUpstream = []');
+  const tryIdx = syncSrc.indexOf('try {', declIdx > -1 ? declIdx : 0);
+  assert(declIdx > -1 && tryIdx > -1 && declIdx < tryIdx,
+    'issuesWithoutUpstream is declared before the try block');
+
+  // Verify catch block returns issuesWithoutUpstream (not []) to preserve partial results
+  const catchBlock = syncSrc.match(/catch \(error\) \{[\s\S]*?SYNCJIRATOGITHUB: Error processing recently-updated[\s\S]*?return (.*?);/);
+  assert(catchBlock, 'catch block has a return statement');
+  assertEqual(catchBlock[1], 'issuesWithoutUpstream',
+    'catch block returns issuesWithoutUpstream (preserves partial results on error)');
 }
 
 {
-  // Verify index.js captures the return value and merges with manual issues
+  // Verify index.js captures the return value, merges with manual issues, and fetches needed fields
   const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
 
   assert(indexSrc.includes('jiraIssuesWithoutUpstream = await syncUpdatedJiraIssuesToGitHub'),
@@ -581,11 +593,7 @@ console.log('\n=== Old Jira issues without Upstream URL get GitHub issues create
     'index.js deduplicates by Jira key');
   assert(indexSrc.includes('allManualJiraIssues'),
     'index.js combines manual and upstream-less issues');
-}
 
-{
-  // Verify fetchJiraIssues fetches resolution and reporter fields
-  const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
   const fetchJiraMatch = indexSrc.match(/paginatedJiraSearch\(\s*`project = PF AND component.*?status not in.*?`,\s*'([^']*)'/s);
   assert(fetchJiraMatch, 'found fetchJiraIssues paginatedJiraSearch call');
   assert(fetchJiraMatch[1].includes('resolution'), 'fetchJiraIssues fields include resolution');

@@ -752,13 +752,13 @@ function buildBatchedIssueDetailsQuery(issueRequests) {
 // corresponding GitHub issues were NOT fetched in the GitHub-driven loop
 // (e.g., the GitHub issue wasn't updated recently enough to appear in the fetch).
 export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, repo, owner) {
+  // Collect Jira issues that have no upstream URL — these need GitHub issues created
+  const issuesWithoutUpstream = [];
+
   try {
     console.log(
       `  Found ${recentlyUpdatedJiraIssues.length} recently-updated Jira issue(s) not already processed. Syncing to GitHub...`
     );
-
-    // Collect Jira issues that have no upstream URL — these need GitHub issues created
-    const issuesWithoutUpstream = [];
 
     // Phase 1: Collect all GitHub issue URLs and batch-fetch them
     const issueRequests = [];
@@ -884,7 +884,7 @@ export async function syncUpdatedJiraIssuesToGitHub(recentlyUpdatedJiraIssues, r
       'SYNCJIRATOGITHUB: Error processing recently-updated Jira issues',
       error
     );
-    return [];
+    return issuesWithoutUpstream;
   }
 }
 
