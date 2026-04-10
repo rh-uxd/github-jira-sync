@@ -704,6 +704,35 @@ console.log('\n=== Unassignable Jira user: assignee retry logic ===');
     'editJiraIssue error handling occurs before transition logic (transition is still reachable)');
 }
 
+{
+  // When assignee is the ONLY change, retry should be skipped and no false success logged
+  const changes = ['assignee'];
+  const assigneeIdx = changes.indexOf('assignee');
+  if (assigneeIdx > -1) changes.splice(assigneeIdx, 1);
+  assertEqual(changes.length, 0, 'changes is empty when assignee was the only change — retry skipped');
+}
+
+{
+  // When assignee + other fields changed, retry should proceed with remaining changes
+  const changes = ['title', 'assignee', 'description'];
+  const assigneeIdx = changes.indexOf('assignee');
+  if (assigneeIdx > -1) changes.splice(assigneeIdx, 1);
+  assertEqual(changes.length, 2, 'two changes remain after removing assignee');
+  assert(!changes.includes('assignee'), 'assignee removed from changes list');
+  assert(changes.includes('title') && changes.includes('description'), 'title and description preserved in changes');
+}
+
+{
+  // Verify success logging is gated on changes.length > 0 after the catch block
+  // This prevents false success when assignee was the only change
+  const updateSrc = readFileSync(join(__dirname, '../src/updateJiraIssue.js'), 'utf-8');
+
+  const catchBlockEnd = updateSrc.indexOf('throw editError');
+  const successGuard = updateSrc.indexOf('if (changes.length > 0) {\n          syncSummary.githubToJira', catchBlockEnd);
+  assert(successGuard > catchBlockEnd,
+    'syncSummary.githubToJira is gated on changes.length > 0 after catch block');
+}
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${'─'.repeat(50)}`);

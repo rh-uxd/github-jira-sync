@@ -301,10 +301,12 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
             throw editError;
           }
         }
-        syncSummary.githubToJira = true;
-        console.log(
-          `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
-        );
+        if (changes.length > 0) {
+          syncSummary.githubToJira = true;
+          console.log(
+            `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
+          );
+        }
       }
 
       // Sync comments
