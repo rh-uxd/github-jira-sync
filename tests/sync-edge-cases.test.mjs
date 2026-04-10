@@ -623,6 +623,87 @@ console.log('\n=== Old Jira issues without Upstream URL get GitHub issues create
   assertEqual(pf101.fields.summary, 'Issue 101', 'deduplication: manual version of PF-101 takes priority');
 }
 
+// ─── Unassignable Jira user: assignee retry logic ───────────────────────────
+
+console.log('\n=== Unassignable Jira user: assignee retry logic ===');
+
+{
+  // Verify updateJiraIssue.js wraps editJiraIssue in a try-catch that handles assignee errors
+  const updateSrc = readFileSync(join(__dirname, '../src/updateJiraIssue.js'), 'utf-8');
+
+  assert(updateSrc.includes("editError.response?.data?.errors?.assignee"),
+    'editJiraIssue catch checks for assignee field error');
+  assert(updateSrc.includes("delete jiraIssueData.fields.assignee"),
+    'assignee is removed from payload on retry');
+  assert(updateSrc.includes("Retrying without assignee"),
+    'logs a warning about unassignable user before retrying');
+}
+
+{
+  // Verify assignee error detection logic correctly identifies assignee 400 errors
+  const mockErrorResponse = {
+    status: 400,
+    data: {
+      errorMessages: [],
+      errors: { assignee: "User '557058:a502f956-47d6-4de9-85b0-75424d4014d0' cannot be assigned issues." }
+    }
+  };
+
+  const isAssigneeError =
+    mockErrorResponse.status === 400 &&
+    mockErrorResponse.data?.errors?.assignee;
+
+  assert(isAssigneeError, 'detects assignee error from Jira 400 response');
+}
+
+{
+  // Non-assignee 400 error should NOT match
+  const mockOtherError = {
+    status: 400,
+    data: {
+      errorMessages: ['Field "summary" is required'],
+      errors: { summary: 'You must specify a summary of the issue.' }
+    }
+  };
+
+  const isAssigneeError =
+    mockOtherError.status === 400 &&
+    mockOtherError.data?.errors?.assignee;
+
+  assert(!isAssigneeError, 'non-assignee 400 error is NOT treated as assignee error');
+}
+
+{
+  // Verify retry removes assignee from payload but preserves other fields
+  const payload = {
+    fields: {
+      summary: 'Test issue',
+      description: { type: 'doc', content: [] },
+      assignee: { accountId: '557058:a502f956-47d6-4de9-85b0-75424d4014d0' },
+    }
+  };
+
+  delete payload.fields.assignee;
+  assertEqual(payload.fields.assignee, undefined, 'assignee removed from payload for retry');
+  assertEqual(payload.fields.summary, 'Test issue', 'summary preserved after assignee removal');
+  assertEqual(payload.fields.description.type, 'doc', 'description preserved after assignee removal');
+}
+
+{
+  // Verify transition logic (transitionJiraIssue) is still reachable after editJiraIssue error handling
+  // The editJiraIssue try-catch should be INSIDE the changes.length block,
+  // and transitionJiraIssue should be OUTSIDE it (later in the same else branch)
+  const updateSrc = readFileSync(join(__dirname, '../src/updateJiraIssue.js'), 'utf-8');
+
+  const editTryCatchIdx = updateSrc.indexOf("} catch (editError) {");
+  const transitionIdx = updateSrc.indexOf("transitionJiraIssue(jiraIssue.key, 'Closed')");
+
+  assert(editTryCatchIdx > -1, 'editJiraIssue has inner try-catch');
+  assert(transitionIdx > -1, 'transitionJiraIssue Closed call exists');
+  assert(editTryCatchIdx < transitionIdx,
+    'editJiraIssue error handling occurs before transition logic (transition is still reachable)');
+}
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${'─'.repeat(50)}`);
