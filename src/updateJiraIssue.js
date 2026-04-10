@@ -279,11 +279,34 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       if (assigneeChanged) changes.push('assignee');
 
       if (changes.length > 0) {
-        await editJiraIssue(jiraIssue.key, jiraIssueData);
-        syncSummary.githubToJira = true;
-        console.log(
-          `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
-        );
+        try {
+          await editJiraIssue(jiraIssue.key, jiraIssueData);
+        } catch (editError) {
+          const isAssigneeError =
+            editError.response?.status === 400 &&
+            editError.response?.data?.errors?.assignee;
+
+          if (isAssigneeError && jiraIssueData.fields.assignee) {
+            console.log(
+              `  ⚠ Assignee ${jiraIssueData.fields.assignee.accountId} cannot be assigned in Jira. Retrying without assignee...`
+            );
+            delete jiraIssueData.fields.assignee;
+            const assigneeIdx = changes.indexOf('assignee');
+            if (assigneeIdx > -1) changes.splice(assigneeIdx, 1);
+
+            if (changes.length > 0) {
+              await editJiraIssue(jiraIssue.key, jiraIssueData);
+            }
+          } else {
+            throw editError;
+          }
+        }
+        if (changes.length > 0) {
+          syncSummary.githubToJira = true;
+          console.log(
+            `  ✓ Synced from GitHub → Jira: ${changes.join(', ')} (GitHub updated ${githubIssue.updatedAt || 'unknown'})`
+          );
+        }
       }
 
       // Sync comments
