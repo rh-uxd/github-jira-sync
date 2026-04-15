@@ -165,9 +165,8 @@ export async function updateChildIssues(parentJiraKey, githubIssue, isEpic) {
               );
             } else {
               console.log(
-                ` - Skipping close of child issue ${item.child.key}: GitHub issue is still open (not a sub-issue of parent)`
+                ` - Skipping close of child issue ${item.child.key}: linked GitHub issue is still open`
               );
-              syncStats.track('warnings', { key: item.child.key, message: 'GitHub issue is still open (not a sub-issue of parent)' });
             }
           }
         }
