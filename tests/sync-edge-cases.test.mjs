@@ -733,6 +733,24 @@ console.log('\n=== Unassignable Jira user: assignee retry logic ===');
     'syncSummary.githubToJira is gated on changes.length > 0 after catch block');
 }
 
+// ─── Child issue skip-close log message ─────────────────────────────────────
+
+console.log('\n=== Child issue skip-close log message ===');
+
+{
+  const updateSrc = readFileSync(join(__dirname, '../src/updateJiraIssue.js'), 'utf-8');
+
+  assert(updateSrc.includes('linked GitHub issue is still open'),
+    'skip-close log message says "linked GitHub issue is still open"');
+  assert(!updateSrc.includes('not a sub-issue of parent'),
+    'old misleading "not a sub-issue of parent" message is removed');
+  assert(!updateSrc.includes("track('warnings'") || !updateSrc.substring(
+    updateSrc.indexOf('linked GitHub issue is still open') - 200,
+    updateSrc.indexOf('linked GitHub issue is still open') + 200
+  ).includes("track('warnings'"),
+    'skip-close does not track a warning for open GitHub issues');
+}
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${'─'.repeat(50)}`);
