@@ -291,6 +291,113 @@ buildRunner(`
   this.assert(allText.includes('Quoted text'), 'content preserved');
 `).call({ assert, randomUUID });
 
+// ─── Strikethrough: Markdown → ADF ───────────────────────────────────────────
+
+console.log('\n=== Strikethrough: Markdown → ADF ===');
+
+buildRunner(`
+  const md = '~~deleted text~~';
+  const blocks = markdownToADFBlocks(md);
+  const para = blocks[0];
+
+  this.assert(para.type === 'paragraph', 'block is paragraph');
+  this.assert(para.content.length === 1, 'has 1 inline node');
+  this.assert(para.content[0].text === 'deleted text', 'text content correct');
+  this.assert(para.content[0].marks.length === 1, 'has 1 mark');
+  this.assert(para.content[0].marks[0].type === 'strike', 'mark type is strike');
+`).call({ assert, randomUUID });
+
+// ─── Strikethrough: ADF → Markdown ───────────────────────────────────────────
+
+console.log('\n=== Strikethrough: ADF → Markdown ===');
+
+buildRunner(`
+  const adf = [{
+    type: 'paragraph',
+    content: [{ type: 'text', text: 'deleted text', marks: [{ type: 'strike' }] }]
+  }];
+  const md = adfBlocksToMarkdown(adf);
+
+  this.assert(md === '~~deleted text~~', 'ADF strike converts to ~~text~~: ' + JSON.stringify(md));
+`).call({ assert, randomUUID });
+
+// ─── Strikethrough: inline within sentence ───────────────────────────────────
+
+console.log('\n=== Strikethrough: inline within sentence ===');
+
+buildRunner(`
+  const md = 'This has ~~removed~~ text in it';
+  const blocks = markdownToADFBlocks(md);
+  const content = blocks[0].content;
+
+  this.assert(content.length === 3, 'has 3 inline nodes');
+  this.assert(content[0].text === 'This has ', 'prefix text correct');
+  this.assert(content[1].text === 'removed', 'strike text correct');
+  this.assert(content[1].marks[0].type === 'strike', 'strike mark present');
+  this.assert(content[2].text === ' text in it', 'suffix text correct');
+`).call({ assert, randomUUID });
+
+// ─── Strikethrough: single tilde ~text~ ─────────────────────────────────────
+
+console.log('\n=== Strikethrough: single tilde ~text~ ===');
+
+buildRunner(`
+  const md = '~deleted text~';
+  const blocks = markdownToADFBlocks(md);
+  const para = blocks[0];
+
+  this.assert(para.content.length === 1, 'has 1 inline node');
+  this.assert(para.content[0].text === 'deleted text', 'text content correct');
+  this.assert(para.content[0].marks[0].type === 'strike', 'single tilde mark is strike');
+`).call({ assert, randomUUID });
+
+// ─── Strikethrough: single tilde inline ─────────────────────────────────────
+
+console.log('\n=== Strikethrough: single tilde inline ===');
+
+buildRunner(`
+  const md = 'item 4. ~things~';
+  const blocks = markdownToADFBlocks(md);
+  const content = blocks[0].content;
+
+  this.assert(content.length === 2, 'has 2 inline nodes');
+  this.assert(content[0].text === 'item 4. ', 'prefix text correct');
+  this.assert(content[1].text === 'things', 'strike text correct');
+  this.assert(content[1].marks[0].type === 'strike', 'single tilde strike mark present');
+`).call({ assert, randomUUID });
+
+// ─── Strikethrough: double tilde preferred over single ──────────────────────
+
+console.log('\n=== Strikethrough: double tilde matched before single ===');
+
+buildRunner(`
+  const md = '~~double~~ and ~single~';
+  const blocks = markdownToADFBlocks(md);
+  const content = blocks[0].content;
+
+  this.assert(content.length === 3, 'has 3 inline nodes');
+  this.assert(content[0].text === 'double', 'double tilde text correct');
+  this.assert(content[0].marks[0].type === 'strike', 'double tilde is strike');
+  this.assert(content[2].text === 'single', 'single tilde text correct');
+  this.assert(content[2].marks[0].type === 'strike', 'single tilde is strike');
+`).call({ assert, randomUUID });
+
+// ─── Strikethrough: mixed with other formatting ─────────────────────────────
+
+console.log('\n=== Strikethrough: mixed with other formatting ===');
+
+buildRunner(`
+  const md = '**bold** and ~~struck~~ and *italic*';
+  const blocks = markdownToADFBlocks(md);
+  const content = blocks[0].content;
+
+  this.assert(content.length === 5, 'has 5 inline nodes');
+  this.assert(content[0].marks[0].type === 'strong', 'first is bold');
+  this.assert(content[2].marks[0].type === 'strike', 'third is strikethrough');
+  this.assert(content[2].text === 'struck', 'strike text correct');
+  this.assert(content[4].marks[0].type === 'em', 'fifth is italic');
+`).call({ assert, randomUUID });
+
 // ─── Summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${'─'.repeat(50)}`);
