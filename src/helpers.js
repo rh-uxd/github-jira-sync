@@ -1162,26 +1162,30 @@ export function adfToMarkdown(adf, options = {}) {
 // Parse inline Markdown text into ADF inline content nodes
 function parseMarkdownInline(text) {
   const nodes = [];
-  const pattern = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(!\[([^\]]*)\]\(([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))/g;
+  const pattern = /(~~(.+?)~~)|(~([^~]+?)~)|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(!\[([^\]]*)\]\(([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))/g;
   let lastIndex = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
       nodes.push({ type: 'text', text: text.slice(lastIndex, match.index) });
     }
-    if (match[1]) { // **bold**
-      nodes.push({ type: 'text', text: match[2], marks: [{ type: 'strong' }] });
-    } else if (match[3]) { // *italic*
-      nodes.push({ type: 'text', text: match[4], marks: [{ type: 'em' }] });
-    } else if (match[5]) { // _italic_
-      nodes.push({ type: 'text', text: match[6], marks: [{ type: 'em' }] });
-    } else if (match[7]) { // `code`
-      nodes.push({ type: 'text', text: match[8], marks: [{ type: 'code' }] });
-    } else if (match[9]) { // ![alt](url) — inline image as linked text
-      const alt = match[10] || 'image';
-      nodes.push({ type: 'text', text: alt, marks: [{ type: 'link', attrs: { href: match[11] } }] });
-    } else if (match[12]) { // [text](url)
-      nodes.push({ type: 'text', text: match[13], marks: [{ type: 'link', attrs: { href: match[14] } }] });
+    if (match[1]) { // ~~strikethrough~~
+      nodes.push({ type: 'text', text: match[2], marks: [{ type: 'strike' }] });
+    } else if (match[3]) { // ~strikethrough~
+      nodes.push({ type: 'text', text: match[4], marks: [{ type: 'strike' }] });
+    } else if (match[5]) { // **bold**
+      nodes.push({ type: 'text', text: match[6], marks: [{ type: 'strong' }] });
+    } else if (match[7]) { // *italic*
+      nodes.push({ type: 'text', text: match[8], marks: [{ type: 'em' }] });
+    } else if (match[9]) { // _italic_
+      nodes.push({ type: 'text', text: match[10], marks: [{ type: 'em' }] });
+    } else if (match[11]) { // `code`
+      nodes.push({ type: 'text', text: match[12], marks: [{ type: 'code' }] });
+    } else if (match[13]) { // ![alt](url) — inline image as linked text
+      const alt = match[14] || 'image';
+      nodes.push({ type: 'text', text: alt, marks: [{ type: 'link', attrs: { href: match[15] } }] });
+    } else if (match[16]) { // [text](url)
+      nodes.push({ type: 'text', text: match[17], marks: [{ type: 'link', attrs: { href: match[18] } }] });
     }
     lastIndex = pattern.lastIndex;
   }
