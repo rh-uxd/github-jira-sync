@@ -5,6 +5,7 @@ import {
   createNewJiraIssue,
   syncCommentsToJira,
   buildDescriptionADF,
+  buildPrUrlsADF,
 } from './helpers.js';
 import { updateChildIssues } from './updateJiraIssue.js';
 import { addJiraLinkToGitHub } from './syncJiraToGitHub.js';
@@ -25,6 +26,9 @@ export async function createChildIssues(
     const assignees = subIssue?.assignees?.nodes
       ?.map((a) => a.login)
       .join(', ');
+    const subIssuePrUrls = subIssue.closedByPullRequestsReferences?.nodes
+      ?.map((pr) => pr.url)
+      .filter(Boolean) || [];
     const childIssue = {
       fields: {
         project: {
@@ -37,6 +41,7 @@ export async function createChildIssues(
           reporter: subIssue?.author?.login || '',
           assignees,
         }),
+        ...(subIssuePrUrls.length > 0 && { 'customfield_10875': buildPrUrlsADF(subIssuePrUrls) }),
       },
     };
 

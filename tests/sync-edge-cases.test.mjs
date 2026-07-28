@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import exported functions directly
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
-import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch } from '../src/helpers.js';
+import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF } from '../src/helpers.js';
 import { syncStats, errorCollector } from '../src/logging.js';
 
 let passed = 0;
@@ -749,6 +749,159 @@ console.log('\n=== Child issue skip-close log message ===');
     updateSrc.indexOf('linked GitHub issue is still open') + 200
   ).includes("track('warnings'"),
     'skip-close does not track a warning for open GitHub issues');
+}
+
+// ─── PR link sync (customfield_10875) ───────────────────────────────────────
+
+console.log('\n=== PR link sync (customfield_10875) ===');
+
+const baseIssue = {
+  title: 'Test issue',
+  url: 'https://github.com/patternfly/patternfly-react/issues/100',
+  body: 'Test body',
+  number: 100,
+  labels: { nodes: [] },
+  assignees: { nodes: [] },
+  author: { login: 'testuser' },
+  issueType: null,
+};
+
+{
+  // With PRs — field is ADF doc with URLs as text nodes separated by hardBreaks
+  const issue = {
+    ...baseIssue,
+    closedByPullRequestsReferences: {
+      nodes: [
+        { url: 'https://github.com/patternfly/patternfly-react/pull/200' },
+        { url: 'https://github.com/patternfly/patternfly-react/pull/201' },
+      ],
+    },
+  };
+  const result = buildJiraIssueData(issue, false);
+  const field = result.fields['customfield_10875'];
+  assertEqual(field?.type, 'doc', 'customfield_10875 is ADF doc');
+  const text = extractTextFromADF(field).trim();
+  assert(text.includes('pull/200'), 'ADF contains first PR URL');
+  assert(text.includes('pull/201'), 'ADF contains second PR URL');
+}
+
+{
+  // No PRs — field not set
+  const issue = {
+    ...baseIssue,
+    closedByPullRequestsReferences: { nodes: [] },
+  };
+  const result = buildJiraIssueData(issue, false);
+  assert(!('customfield_10875' in result.fields), 'customfield_10875 not set when no PRs');
+}
+
+{
+  // Missing closedByPullRequestsReferences — no crash, field not set
+  const result = buildJiraIssueData(baseIssue, false);
+  assert(!('customfield_10875' in result.fields), 'customfield_10875 not set when field missing from response');
+}
+
+{
+  // Single PR — ADF with single inlineCard node, no hardBreak
+  const issue = {
+    ...baseIssue,
+    closedByPullRequestsReferences: {
+      nodes: [{ url: 'https://github.com/patternfly/patternfly-react/pull/300' }],
+    },
+  };
+  const result = buildJiraIssueData(issue, false);
+  const field = result.fields['customfield_10875'];
+  assertEqual(field?.type, 'doc', 'single PR customfield_10875 is ADF doc');
+  const para = field.content[0];
+  assertEqual(para.content.length, 1, 'single PR paragraph has 1 node (no hardBreak)');
+  assertEqual(para.content[0].type, 'inlineCard', 'single PR node is inlineCard');
+  assertEqual(para.content[0].attrs.url, 'https://github.com/patternfly/patternfly-react/pull/300', 'single PR inlineCard url is correct');
+}
+
+{
+  // buildPrUrlsADF: inlineCard nodes with hardBreak between them
+  const adf = buildPrUrlsADF(['https://example.com/pull/1', 'https://example.com/pull/2']);
+  const para = adf.content[0];
+  assertEqual(para.content.length, 3, 'two PRs produce 3 nodes: inlineCard, hardBreak, inlineCard');
+  assertEqual(para.content[0].type, 'inlineCard', 'first node is inlineCard');
+  assertEqual(para.content[0].attrs.url, 'https://example.com/pull/1', 'first inlineCard url correct');
+  assertEqual(para.content[1].type, 'hardBreak', 'middle node is hardBreak');
+  assertEqual(para.content[2].type, 'inlineCard', 'last node is inlineCard');
+}
+
+{
+  // extractTextFromADF handles inlineCard nodes — returns the url attr
+  const adf = {
+    type: 'doc',
+    version: 1,
+    content: [{
+      type: 'paragraph',
+      content: [
+        { type: 'inlineCard', attrs: { url: 'https://example.com/pull/1' } },
+        { type: 'hardBreak' },
+        { type: 'inlineCard', attrs: { url: 'https://example.com/pull/2' } },
+      ],
+    }],
+  };
+  const text = extractTextFromADF(adf);
+  assertEqual(text, 'https://example.com/pull/1\nhttps://example.com/pull/2', 'extractTextFromADF extracts URLs from inlineCard nodes');
+}
+
+{
+  // extractTextFromADF: inlineCard with no attrs.url returns empty string
+  const text = extractTextFromADF({ type: 'inlineCard', attrs: {} });
+  assertEqual(text, '', 'inlineCard with no url attr returns empty string');
+}
+
+{
+  // GraphQL queries include closedByPullRequestsReferences
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+  const occurrences = (helpersSrc.match(/closedByPullRequestsReferences/g) || []).length;
+  assert(occurrences >= 4, `closedByPullRequestsReferences appears in at least 4 query locations (found ${occurrences})`);
+}
+
+// ─── PR link sync via recently-updated PRs ───────────────────────────────────
+
+console.log('\n=== PR link sync via recently-updated PRs ===');
+
+{
+  // helpers.js exports getRepoPRsSince and getIssuePRLinks
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+  assert(helpersSrc.includes('export async function getRepoPRsSince'), 'getRepoPRsSince is exported');
+  assert(helpersSrc.includes('export async function getIssuePRLinks'), 'getIssuePRLinks is exported');
+  assert(helpersSrc.includes('GET_RECENT_PRS'), 'GET_RECENT_PRS query defined');
+  assert(helpersSrc.includes('closingIssuesReferences'), 'GET_RECENT_PRS fetches closingIssuesReferences');
+  assert(helpersSrc.includes('GET_ISSUE_PR_LINKS'), 'GET_ISSUE_PR_LINKS query defined');
+}
+
+{
+  // getRepoPRsSince stops paginating when it hits a PR older than since
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+  assert(helpersSrc.includes('new Date(pr.updatedAt) < sinceDate'), 'getRepoPRsSince stops at PRs older than since');
+}
+
+{
+  // syncPRLinksToJira.js exists and has expected structure
+  const syncSrc = readFileSync(join(__dirname, '../src/syncPRLinksToJira.js'), 'utf-8');
+  assert(syncSrc.includes('export async function syncPRLinksToJira'), 'syncPRLinksToJira is exported');
+  assert(syncSrc.includes('getRepoPRsSince'), 'calls getRepoPRsSince');
+  assert(syncSrc.includes('getIssuePRLinks'), 'calls getIssuePRLinks');
+  assert(syncSrc.includes('findJiraIssue'), 'calls findJiraIssue');
+  assert(syncSrc.includes('editJiraIssue'), 'calls editJiraIssue');
+  assert(syncSrc.includes('buildPrUrlsADF'), 'uses buildPrUrlsADF for ADF format');
+}
+
+{
+  // index.js imports and calls syncPRLinksToJira
+  const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
+  assert(indexSrc.includes("import { syncPRLinksToJira }"), 'index.js imports syncPRLinksToJira');
+  assert(indexSrc.includes('await syncPRLinksToJira(owner, repo, since)'), 'index.js calls syncPRLinksToJira');
+}
+
+{
+  // parseIssueUrl correctly parses GitHub issue URLs (inline function in syncPRLinksToJira)
+  const syncSrc = readFileSync(join(__dirname, '../src/syncPRLinksToJira.js'), 'utf-8');
+  assert(syncSrc.includes('issueNumber: parseInt'), 'parseIssueUrl extracts issue number as integer');
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

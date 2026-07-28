@@ -10,6 +10,7 @@ import {
   checkAndHandleArchivedJiraIssue,
   syncUpdatedJiraIssuesToGitHub,
 } from './syncJiraToGitHub.js';
+import { syncPRLinksToJira } from './syncPRLinksToJira.js';
 import { errorCollector, syncStats } from './logging.js';
 
 export let jiraIssues = [];
@@ -89,7 +90,7 @@ const fetchJiraIssues = async (owner, repo, since) => {
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const jiraIssues = await paginatedJiraSearch(
     `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) AND updatedDate >= "${jiraDate}" ORDER BY key ASC`,
-    'key,id,description,status,resolution,assignee,issuetype,updated,summary,components,reporter'
+    'key,id,description,status,resolution,assignee,issuetype,updated,summary,components,reporter,customfield_10875'
   );
   console.log(`    --> Found ${jiraIssues.length} open Jira issues updated since ${since} for Jira component ${ repo }`);
   return jiraIssues;
@@ -197,6 +198,12 @@ async function syncIssues(owner, repo, since, direction = 'both') {
       // if (unprocessedJiraIssues.length > 0) {
         // await handleUnprocessedJiraIssues(unprocessedJiraIssues, repo);
       // }
+    }
+
+    // Sync PR links for issues not updated recently (PRs don't bump issue.updatedAt)
+    if (direction === 'github-to-jira' || direction === 'both') {
+      console.log(`\n= GitHub → Jira sync: PR links from recently-updated PRs =\n`);
+      await syncPRLinksToJira(owner, repo, since);
     }
 
     // Jira → GitHub sync

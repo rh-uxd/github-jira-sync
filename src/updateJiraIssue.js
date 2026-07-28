@@ -272,10 +272,21 @@ export async function updateJiraIssue(jiraIssue, githubIssue) {
       const hadGitHubAssignee = githubIssue.assignees?.nodes?.length > 0;
       const assigneeChanged = !hadAssignee && hadGitHubAssignee;
 
+      const newPrUrls = githubIssue.closedByPullRequestsReferences?.nodes
+        ?.map((pr) => pr.url)
+        .filter(Boolean) || [];
+      const currentPrField = extractTextFromADF(jiraIssue.fields.customfield_10875).trim();
+      const newPrField = newPrUrls.join('\n');
+      const prLinksChanged = currentPrField !== newPrField;
+      if (!prLinksChanged) {
+        delete jiraIssueData.fields['customfield_10875'];
+      }
+
       const changes = [];
       if (titleChanged) changes.push('title');
       if (descriptionChanged) changes.push('description');
       if (assigneeChanged) changes.push('assignee');
+      if (prLinksChanged) changes.push('prLinks');
 
       if (changes.length > 0) {
         try {
