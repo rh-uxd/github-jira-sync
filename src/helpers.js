@@ -150,7 +150,12 @@ const platformTeamUsers = {
   thatblindgeye: '712020:6f63713c-d61e-49de-8f52-be48015241ed',
   kmcfaul: '712020:b46e5c4b-c4b6-4c9c-a998-7811631e4f81',
   srambach: '557058:a502f956-47d6-4de9-85b0-75424d4014d0',
-  jcmill: '712020:e2a5129a-49ac-4813-a336-de270f523ba5'
+  jcmill: '712020:e2a5129a-49ac-4813-a336-de270f523ba5',
+  markcaron: '60fee5a5b704b400688af3ca',
+  adamjohnson: '712020:29e795ed-4a67-49fc-811b-dd910cc4aa08',
+  ArathyKumar: '712020:c852bf92-e852-4caa-b7e3-288e9f09894b',
+  bennypowers: '615ac3dd78e5e4007057c258',
+  zeroedin: '619d55dfc510bc006b8b0f89'
 };
 
 const enablementTeamUsers = {
@@ -173,6 +178,8 @@ const designTeamUsers = {
   kaylachumley: '712020:826e077b-27bf-4cec-abbd-33404f07359c',
   edonehoo: '628677200dae78006808ea80',
   'bekah-stephens': '5defd0548998970e5b43364a',
+  marionnegp: '61ddc3b0a54af90069d0760c',
+  coreyvickery: '5cc0bd9496f23e0e77176ac5'
 };
 
 const userMappings = {
@@ -373,6 +380,18 @@ export const availableComponents = [
   {
     name: 'patternfly-analytics',
     owner: 'rh-uxd'
+  },
+  {
+    name: 'red-hat-design-system',
+    owner: 'RedHat-UX'
+  },
+  {
+    name: 'red-hat-design-tokens',
+    owner: 'RedHat-UX'
+  },
+  {
+    name: 'red-hat-icons',
+    owner: 'RedHat-UX'
   }
 ];
 
