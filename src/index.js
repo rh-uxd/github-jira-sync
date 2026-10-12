@@ -11,7 +11,7 @@ import {
   syncUpdatedJiraIssuesToGitHub,
 } from './syncJiraToGitHub.js';
 import { syncPRLinksToJira } from './syncPRLinksToJira.js';
-import { errorCollector, syncStats } from './logging.js';
+import { errorCollector, syncStats, markRunFailedIfErrors } from './logging.js';
 
 export let jiraIssues = [];
 
@@ -141,12 +141,12 @@ const fetchGitHubIssues = async (owner, repo, since) => {
 };
 
 async function syncIssues(owner, repo, since, direction = 'both') {
+  // Each repo owns its own error batch. This also protects against stale
+  // errors if a previous run exited before reaching its normal cleanup.
+  errorCollector.clear();
   console.log(`\n\n=== START Syncing issues for repo ${ owner }/${ repo } updated since ${since} (direction: ${direction}) ===\n\n`);
   syncStats.setCurrentRepo(`${owner}/${repo}`);
   try {
-    // Clear any previous errors
-    // errorCollector.clear();
-
     // Keep track of which Jira issues we've processed (hoisted so Jira→GitHub block can use it)
     const processedJiraIssues = new Set();
 
@@ -283,3 +283,9 @@ for (const {name, owner} of availableComponents) {
 }
 
 syncStats.printSummary();
+
+// Individual sync operations collect and log errors so the remaining repos
+// can still be processed. Mark the overall run failed only after the summary.
+if (markRunFailedIfErrors()) {
+  console.log('\nSync completed with errors; marking this run as failed.');
+}

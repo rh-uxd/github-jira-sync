@@ -21,11 +21,14 @@ class ErrorCollector {
     if (!this.hasErrors()) return;
 
     this.errors.forEach(({ context, message, response }) => {
-      console.error(`  ${context}: ${message}`);
+      // Keep collected errors on stdout with the rest of the sync log. GitHub
+      // Actions can interleave stdout and stderr, making errors appear under a
+      // later repository even when they were emitted at the end of this one.
+      console.log(`  ${context}: ${message}`);
       if (response) {
-        console.error(`  Response: ${JSON.stringify(response)}`);
+        console.log(`  Response: ${JSON.stringify(response)}`);
       }
-      console.error('  ==============================================');
+      console.log('  ==============================================');
     });
   }
 
@@ -70,6 +73,10 @@ class SyncStats {
     } else {
       stats[event] = (stats[event] || 0) + 1;
     }
+  }
+
+  hasErrors() {
+    return [...this.repoStats.values()].some((stats) => stats.errors > 0);
   }
 
   printSummary() {
@@ -148,3 +155,9 @@ class SyncStats {
 }
 
 export const syncStats = new SyncStats();
+
+export function markRunFailedIfErrors(processRef = process) {
+  if (!syncStats.hasErrors()) return false;
+  processRef.exitCode = 1;
+  return true;
+}
