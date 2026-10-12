@@ -14,7 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Import exported functions directly
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
 import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF } from '../src/helpers.js';
-import { syncStats, errorCollector } from '../src/logging.js';
+import { syncStats, errorCollector, markRunFailedIfErrors } from '../src/logging.js';
 
 let passed = 0;
 let failed = 0;
@@ -260,6 +260,10 @@ console.log('\n=== SyncStats tracking ===');
   assertEqual(stats.githubClosed, 3, 'tracks 3 githubClosed');
   assertEqual(stats.githubReopened, 1, 'tracks 1 githubReopened');
   assertEqual(stats.errors, 1, 'tracks 1 error');
+  assertEqual(syncStats.hasErrors(), true, 'reports errors across repos');
+  const fakeProcess = { exitCode: 0 };
+  assertEqual(markRunFailedIfErrors(fakeProcess), true, 'marks run failed when errors were recorded');
+  assertEqual(fakeProcess.exitCode, 1, 'sets a nonzero process exit code for errors');
   assertEqual(stats.warnings.length, 0, 'no warnings tracked yet');
 
   // Track structured warnings
@@ -276,10 +280,12 @@ console.log('\n=== SyncStats tracking ===');
   syncStats.track('githubCreated');
   assertEqual(syncStats.repoStats.size, 2, 'tracks stats for 2 repos');
   assertEqual(syncStats.repoStats.get('patternfly/patternfly-design-kit').githubCreated, 1, 'second repo tracked independently');
+  assertEqual(syncStats.hasErrors(), true, 'retains run failure after switching repos');
 
   // Clean up
   syncStats.repoStats.clear();
   syncStats.currentRepo = null;
+  assertEqual(syncStats.hasErrors(), false, 'reports no errors after stats reset');
 }
 
 // ─── SyncStats printSummary grouping ─────────────────────────────────────────
@@ -332,6 +338,25 @@ console.log('\n=== ErrorCollector ===');
   assertEqual(errorCollector.errors.length, 2, 'tracks 2 errors');
   assertEqual(errorCollector.errors[0].context, 'TEST: context1', 'first error context');
   assertEqual(errorCollector.errors[0].message, 'test error 1', 'first error message');
+
+  // The collected error block must use the same stream as regular sync output
+  // so GitHub Actions cannot visually move it into the next repository's log.
+  const stdout = [];
+  const stderr = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (...args) => stdout.push(args.join(' '));
+  console.error = (...args) => stderr.push(args.join(' '));
+  try {
+    errorCollector.logErrors();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  assertEqual(stdout.length, 4, 'writes all collected error lines to stdout');
+  assertEqual(stderr.length, 0, 'does not split collected error block across streams');
+  assert(stdout[0].includes('TEST: context1'), 'stdout error block includes first error');
+  assert(stdout[2].includes('TEST: context2'), 'stdout error block includes second error');
 
   errorCollector.clear();
   assertEqual(errorCollector.hasErrors(), false, 'clear resets errors');
