@@ -25,13 +25,20 @@ This Node.js application automatically synchronizes issues between GitHub and Ji
 4. Edit the `.env` file with your credentials:
    ```
    # GitHub Configuration
+   # Default token for the patternfly org (and any org without a dedicated token)
    GH_TOKEN=your_GH_personal_access_token
+   # Token for the rh-uxd org (required to sync rh-uxd repos)
+   GH_JIRA_SYNC_RHUXD_PAT=your_rh_uxd_org_token
+   # Token for the RedHat-UX org (RHDS repos — patternfly-jira-sync bot PAT)
+   GH_JIRA_SYNC_RHDS_PAT=your_redhat_ux_org_token
 
    # Jira Configuration (Jira Cloud uses Basic auth: email + API token)
    JIRA_EMAIL=your_atlassian_account_email@example.com
    JIRA_API_TOKEN=your_jira_api_token
    ```
    For Jira Cloud, use your **Atlassian account email** and an [API token](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/).
+
+   Repos are synced across multiple GitHub orgs, and each org uses its own token (see `getOctokitForOwner` in `src/helpers.js`): `patternfly` → `GH_TOKEN`, `rh-uxd` → `GH_JIRA_SYNC_RHUXD_PAT`, `RedHat-UX` → `GH_JIRA_SYNC_RHDS_PAT`.
    
 ## How Sync Works
 
@@ -193,8 +200,11 @@ The application syncs issues from PatternFly repositories configured in `src/hel
 - react-topology
 - react-user-feedback
 - react-virtualized-extension
+- red-hat-design-system (RedHat-UX org)
+- red-hat-design-tokens (RedHat-UX org)
+- red-hat-icons (RedHat-UX org)
 
-Each repository is processed as a separate Jira component within the specified Jira project.
+Each repository is processed as a separate Jira component. By default, issues sync to the **PF** Jira project. A repo can override this with a `jiraProject` field in `availableComponents` — the RHDS repos (`red-hat-design-system`, `red-hat-design-tokens`, `red-hat-icons`) sync to the **RHATDS** project. The project key is resolved per-repo via `getJiraProject` in `src/helpers.js`.
 
 ## Contributing
 

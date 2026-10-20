@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import exported functions directly
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
-import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF } from '../src/helpers.js';
+import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF, getJiraProject, getOctokitForOwner } from '../src/helpers.js';
 import { syncStats, errorCollector } from '../src/logging.js';
 
 let passed = 0;
@@ -539,7 +539,7 @@ console.log('\n=== Paginated Jira search ===');
   assert(helpersSrc.includes('data.total'), 'paginatedJiraSearch checks total for loop termination');
 
   // Verify all three fetch functions in index.js use paginatedJiraSearch
-  assert(indexSrc.includes("import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl, paginatedJiraSearch }"),
+  assert(indexSrc.includes('paginatedJiraSearch') && /import \{[^}]*paginatedJiraSearch[^}]*\} from '\.\/helpers\.js'/.test(indexSrc),
     'index.js imports paginatedJiraSearch');
 
   // Count occurrences of paginatedJiraSearch calls (should be 3: open, closed, manual)
@@ -594,7 +594,7 @@ console.log('\n=== Old Jira issues without Upstream URL get GitHub issues create
   assert(indexSrc.includes('allManualJiraIssues'),
     'index.js combines manual and upstream-less issues');
 
-  const fetchJiraMatch = indexSrc.match(/paginatedJiraSearch\(\s*`project = PF AND component.*?status not in.*?`,\s*'([^']*)'/s);
+  const fetchJiraMatch = indexSrc.match(/paginatedJiraSearch\(\s*`project = \$\{getJiraProject\(repo\)\} AND component.*?status not in.*?`,\s*'([^']*)'/s);
   assert(fetchJiraMatch, 'found fetchJiraIssues paginatedJiraSearch call');
   assert(fetchJiraMatch[1].includes('resolution'), 'fetchJiraIssues fields include resolution');
   assert(fetchJiraMatch[1].includes('reporter'), 'fetchJiraIssues fields include reporter');
@@ -902,6 +902,88 @@ console.log('\n=== PR link sync via recently-updated PRs ===');
   // parseIssueUrl correctly parses GitHub issue URLs (inline function in syncPRLinksToJira)
   const syncSrc = readFileSync(join(__dirname, '../src/syncPRLinksToJira.js'), 'utf-8');
   assert(syncSrc.includes('issueNumber: parseInt'), 'parseIssueUrl extracts issue number as integer');
+}
+
+// ─── Per-repo Jira project routing (getJiraProject) ──────────────────────────
+
+console.log('\n=== Per-repo Jira project routing ===');
+
+{
+  // RHDS repos route to the RHATDS Jira project
+  assertEqual(getJiraProject('red-hat-design-system'), 'RHATDS', 'red-hat-design-system → RHATDS');
+  assertEqual(getJiraProject('red-hat-design-tokens'), 'RHATDS', 'red-hat-design-tokens → RHATDS');
+  assertEqual(getJiraProject('red-hat-icons'), 'RHATDS', 'red-hat-icons → RHATDS');
+
+  // PatternFly/RH-UXD repos (no jiraProject override) default to PF
+  assertEqual(getJiraProject('patternfly-react'), 'PF', 'patternfly-react → PF (default)');
+  assertEqual(getJiraProject('github-jira-sync'), 'PF', 'rh-uxd repo → PF (default)');
+
+  // Unknown repos fall back to the default project
+  assertEqual(getJiraProject('some-unknown-repo'), 'PF', 'unknown repo → PF (default)');
+}
+
+{
+  // buildJiraIssueData sets project.key based on the repo in the issue URL
+  const rhdsIssue = {
+    title: 'RHDS issue',
+    url: 'https://github.com/RedHat-UX/red-hat-design-system/issues/42',
+    body: 'An RHDS issue.',
+    number: 42,
+    labels: { nodes: [] },
+    assignees: { nodes: [] },
+    author: { login: 'testuser' },
+    issueType: null,
+  };
+  const rhdsResult = buildJiraIssueData(rhdsIssue, false);
+  assertEqual(rhdsResult.fields.project.key, 'RHATDS', 'RHDS issue creates in RHATDS project');
+
+  const pfIssue = {
+    title: 'PF issue',
+    url: 'https://github.com/patternfly/patternfly-react/issues/42',
+    body: 'A PF issue.',
+    number: 42,
+    labels: { nodes: [] },
+    assignees: { nodes: [] },
+    author: { login: 'testuser' },
+    issueType: null,
+  };
+  const pfResult = buildJiraIssueData(pfIssue, false);
+  assertEqual(pfResult.fields.project.key, 'PF', 'PF issue creates in PF project');
+
+  // Updates must never set the project field (project is immutable on update)
+  const updateResult = buildJiraIssueData(rhdsIssue, true);
+  assert(updateResult.fields.project === undefined, 'update does not set project field');
+}
+
+// ─── RedHat-UX bot token selection (getOctokitForOwner) ──────────────────────
+
+console.log('\n=== RedHat-UX bot token selection ===');
+
+{
+  const savedToken = process.env.GH_JIRA_SYNC_RHDS_PAT;
+
+  // Missing token for the RedHat-UX org should throw
+  delete process.env.GH_JIRA_SYNC_RHDS_PAT;
+  let threw = false;
+  try {
+    getOctokitForOwner('RedHat-UX');
+  } catch (e) {
+    threw = true;
+    assert(e.message.includes('RedHat-UX'), 'error names the RedHat-UX owner when token missing');
+  }
+  assert(threw, 'getOctokitForOwner throws when RedHat-UX token is missing');
+
+  // With the token set, an Octokit instance is returned (and cached)
+  process.env.GH_JIRA_SYNC_RHDS_PAT = 'test-rhds-token';
+  const instance = getOctokitForOwner('RedHat-UX');
+  assert(!!instance, 'getOctokitForOwner returns an instance when RedHat-UX token is set');
+
+  // Restore original env state
+  if (savedToken === undefined) {
+    delete process.env.GH_JIRA_SYNC_RHDS_PAT;
+  } else {
+    process.env.GH_JIRA_SYNC_RHDS_PAT = savedToken;
+  }
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

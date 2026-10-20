@@ -2,6 +2,7 @@ import {
   buildJiraIssueData,
   getJiraIssueType,
   getJiraComponent,
+  getJiraProject,
   createNewJiraIssue,
   syncCommentsToJira,
   buildDescriptionADF,
@@ -22,6 +23,7 @@ export async function createChildIssues(
     // Extract repo name from the repository object
     const [repoOwner, repoName] = subIssue.repository.nameWithOwner.split('/');
     const jiraComponent = getJiraComponent(repoName);
+    const jiraProject = getJiraProject(repoName);
     const jiraIssueType = getJiraIssueType(subIssue.issueType);
     const assignees = subIssue?.assignees?.nodes
       ?.map((a) => a.login)
@@ -32,7 +34,7 @@ export async function createChildIssues(
     const childIssue = {
       fields: {
         project: {
-          key: 'PF',
+          key: jiraProject,
         },
         summary: subIssue.title,
         description: buildDescriptionADF(subIssue.body, {

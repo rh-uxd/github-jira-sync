@@ -29,6 +29,9 @@ export function getOctokitForOwner(owner) {
   let token;
   if (owner === 'rh-uxd') {
     token = process.env.GH_JIRA_SYNC_RHUXD_PAT;
+  } else if (owner === 'RedHat-UX') {
+    // RHDS org (Red Hat Design System) — uses the patternfly-jira-sync bot PAT
+    token = process.env.GH_JIRA_SYNC_RHDS_PAT;
   } else {
     // Default to patternfly token for 'patternfly' and any other owners
     token = process.env.GH_TOKEN;
@@ -383,15 +386,18 @@ export const availableComponents = [
   },
   {
     name: 'red-hat-design-system',
-    owner: 'RedHat-UX'
+    owner: 'RedHat-UX',
+    jiraProject: 'RHATDS'
   },
   {
     name: 'red-hat-design-tokens',
-    owner: 'RedHat-UX'
+    owner: 'RedHat-UX',
+    jiraProject: 'RHATDS'
   },
   {
     name: 'red-hat-icons',
-    owner: 'RedHat-UX'
+    owner: 'RedHat-UX',
+    jiraProject: 'RHATDS'
   }
 ];
 
@@ -399,6 +405,22 @@ export const getJiraComponent = (repoName) =>
   availableComponents.some((component) => component.name === repoName)
     ? repoName
     : null;
+
+// Default Jira project for repos that don't specify one in availableComponents.
+export const DEFAULT_JIRA_PROJECT = 'PF';
+
+/**
+ * Resolve the Jira project key for a given GitHub repo name.
+ * Repos may override the default via the `jiraProject` field in
+ * availableComponents (e.g. RHDS repos sync to RHATDS). Unknown repos and
+ * repos without an override fall back to the default project.
+ * @param {string} repoName - GitHub repository name
+ * @returns {string} Jira project key (e.g. 'PF', 'RHATDS')
+ */
+export const getJiraProject = (repoName) => {
+  const component = availableComponents.find((c) => c.name === repoName);
+  return component?.jiraProject || DEFAULT_JIRA_PROJECT;
+};
 
 export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   const {
@@ -468,7 +490,7 @@ export const buildJiraIssueData = (githubIssue, isUpdateIssue = false) => {
   // Add required extra fields for new issue creation
   if (!isUpdateIssue) {
     jiraIssue.fields.project = {
-      key: 'PF',
+      key: getJiraProject(url.split('/')[4]),
     };
     // Epic name field is required on Epic creation
     if (jiraIssueType.jiraName === 'Epic') {

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl, paginatedJiraSearch } from './helpers.js';
+import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl, paginatedJiraSearch, getJiraProject } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
@@ -89,7 +89,7 @@ const fetchJiraIssues = async (owner, repo, since) => {
   console.log(' - fetching Jira...');
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const jiraIssues = await paginatedJiraSearch(
-    `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) AND updatedDate >= "${jiraDate}" ORDER BY key ASC`,
+    `project = ${getJiraProject(repo)} AND component = "${repo}" AND status not in (Closed, Resolved) AND updatedDate >= "${jiraDate}" ORDER BY key ASC`,
     'key,id,description,status,resolution,assignee,issuetype,updated,summary,components,reporter,customfield_10875'
   );
   console.log(`    --> Found ${jiraIssues.length} open Jira issues updated since ${since} for Jira component ${ repo }`);
@@ -101,7 +101,7 @@ const fetchClosedJiraIssues = async (owner, repo, since) => {
   // Format since date for Jira JQL (Jira uses format: YYYY-MM-DD HH:mm)
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const closedIssues = await paginatedJiraSearch(
-    `project = PF AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+    `project = ${getJiraProject(repo)} AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
     'key,id,description,status,assignee,issuetype,updated'
   );
   // Filter to only issues with Upstream URL
@@ -117,7 +117,7 @@ const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
   // Format since date for Jira JQL
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const allIssues = await paginatedJiraSearch(
-    `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+    `project = ${getJiraProject(repo)} AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
     'key,id,summary,description,status,resolution,assignee,issuetype,reporter,components,updated'
   );
   // Filter to only issues without Upstream URL (manually created, not synced from GitHub)
