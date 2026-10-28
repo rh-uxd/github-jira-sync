@@ -108,20 +108,101 @@ export async function addRemoteLinkToJiraIssue(jiraIssueKey, githubIssue) {
   return jiraIssueKey;
 }
 
+// Returns true for the opaque 400 INVALID_INPUT Jira returns when it can't accept the
+// content — most often a description whose ADF is malformed (e.g. empty text nodes,
+// nested expands, or relative link hrefs produced from Renovate "Dependency Dashboard"
+// issue bodies). The errors map is empty in this case, so we match on the message.
+export function isInvalidInputError(error) {
+  const messages = error?.response?.data?.errorMessages;
+  return (
+    error?.response?.status === 400 &&
+    Array.isArray(messages) &&
+    messages.includes('INVALID_INPUT')
+  );
+}
+
+// Build a minimal, always-valid description ADF used as a fallback when Jira rejects the
+// real description. Preserves the "Upstream URL" marker so the GitHub <-> Jira link
+// lookup (findJiraIssue) still matches the issue.
+export function buildSafeDescriptionADF(originalDescription) {
+  const url = extractUpstreamUrl(originalDescription);
+  const numberMatch = url && url.match(/\/issues\/(\d+)/);
+  const content = [
+    {
+      type: 'paragraph',
+      content: [
+        {
+          type: 'text',
+          text: 'This description could not be synced to Jira because the GitHub issue body contains formatting Jira cannot represent. See the linked GitHub issue for the full description.',
+        },
+      ],
+    },
+  ];
+  if (url) {
+    const footer = [];
+    if (numberMatch) footer.push({ type: 'text', text: `GH Issue ${numberMatch[1]}\n` });
+    footer.push({ type: 'text', text: 'Upstream URL: ' });
+    footer.push({ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] });
+    content.push({ type: 'paragraph', content: footer });
+  }
+  return { type: 'doc', version: 1, content };
+}
+
 export async function createNewJiraIssue(jiraIssueData, githubIssue) {
   await delay();
-  const jiraKey = await jiraClient
-    .post('/rest/api/3/issue', jiraIssueData)
-    .then(
-      async (response) =>
-        await addRemoteLinkToJiraIssue(response.data.key, githubIssue)
-    );
-  return jiraKey;
+  const post = (data) =>
+    jiraClient
+      .post('/rest/api/3/issue', data)
+      .then(
+        async (response) =>
+          await addRemoteLinkToJiraIssue(response.data.key, githubIssue)
+      );
+  try {
+    return await post(jiraIssueData);
+  } catch (error) {
+    // If Jira rejects the description's ADF, retry once with a safe fallback so the
+    // issue still syncs (and the run isn't marked failed) instead of erroring out.
+    if (isInvalidInputError(error) && jiraIssueData.fields?.description) {
+      console.log(
+        ' - Jira rejected the description (INVALID_INPUT); retrying create with a safe fallback description.'
+      );
+      const retryData = {
+        ...jiraIssueData,
+        fields: {
+          ...jiraIssueData.fields,
+          description: buildSafeDescriptionADF(jiraIssueData.fields.description),
+        },
+      };
+      await delay();
+      return await post(retryData);
+    }
+    throw error;
+  }
 }
 
 export async function editJiraIssue(jiraIssueKey, jiraIssueData) {
   await delay();
-  await jiraClient.put(`/rest/api/3/issue/${jiraIssueKey}`, jiraIssueData);
+  try {
+    await jiraClient.put(`/rest/api/3/issue/${jiraIssueKey}`, jiraIssueData);
+  } catch (error) {
+    // Same INVALID_INPUT fallback as create: retry once with a safe description.
+    if (isInvalidInputError(error) && jiraIssueData.fields?.description) {
+      console.log(
+        ` - Jira rejected the description for ${jiraIssueKey} (INVALID_INPUT); retrying with a safe fallback description.`
+      );
+      const retryData = {
+        ...jiraIssueData,
+        fields: {
+          ...jiraIssueData.fields,
+          description: buildSafeDescriptionADF(jiraIssueData.fields.description),
+        },
+      };
+      await delay();
+      await jiraClient.put(`/rest/api/3/issue/${jiraIssueKey}`, retryData);
+    } else {
+      throw error;
+    }
+  }
 }
 
 export const delay = (ms = 1000) =>

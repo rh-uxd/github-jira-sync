@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import exported functions directly
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
-import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF } from '../src/helpers.js';
+import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF, isInvalidInputError, buildSafeDescriptionADF } from '../src/helpers.js';
 import { syncStats, errorCollector, markRunFailedIfErrors } from '../src/logging.js';
 
 let passed = 0;
@@ -927,6 +927,66 @@ console.log('\n=== PR link sync via recently-updated PRs ===');
   // parseIssueUrl correctly parses GitHub issue URLs (inline function in syncPRLinksToJira)
   const syncSrc = readFileSync(join(__dirname, '../src/syncPRLinksToJira.js'), 'utf-8');
   assert(syncSrc.includes('issueNumber: parseInt'), 'parseIssueUrl extracts issue number as integer');
+}
+
+// ─── INVALID_INPUT description fallback (Renovate Dependency Dashboard) ───────
+
+console.log('\n=== INVALID_INPUT description fallback ===');
+
+{
+  // isInvalidInputError only matches the 400 INVALID_INPUT shape
+  assert(isInvalidInputError({ response: { status: 400, data: { errorMessages: ['INVALID_INPUT'], errors: {} } } }),
+    'detects 400 INVALID_INPUT');
+  assert(!isInvalidInputError({ response: { status: 400, data: { errorMessages: [], errors: { assignee: 'x' } } } }),
+    'assignee 400 is not INVALID_INPUT');
+  assert(!isInvalidInputError({ response: { status: 404, data: { errorMessages: ['INVALID_INPUT'] } } }),
+    'non-400 is not INVALID_INPUT');
+  assert(!isInvalidInputError(new Error('boom')), 'plain error is not INVALID_INPUT');
+}
+
+{
+  // Helper: assert an ADF tree contains no empty text nodes (the bug that triggers INVALID_INPUT)
+  const hasEmptyTextNode = (node) => {
+    if (Array.isArray(node)) return node.some(hasEmptyTextNode);
+    if (!node || typeof node !== 'object') return false;
+    if (node.type === 'text' && (node.text === '' || node.text == null)) return true;
+    return node.content ? hasEmptyTextNode(node.content) : false;
+  };
+
+  const url = 'https://github.com/patternfly/patternfly/issues/4339';
+  const originalDescription = {
+    type: 'doc',
+    version: 1,
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'GH Issue 4339\nUpstream URL: ' },
+          { type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] },
+        ],
+      },
+    ],
+  };
+
+  const fallback = buildSafeDescriptionADF(originalDescription);
+  assertEqual(fallback.type, 'doc', 'fallback is an ADF doc');
+  assert(!hasEmptyTextNode(fallback), 'fallback contains no empty text nodes');
+  assertEqual(extractUpstreamUrl(fallback), url, 'fallback preserves the Upstream URL marker for link matching');
+  assert(extractTextFromADF(fallback).includes('could not be synced'), 'fallback includes the explanatory notice');
+
+  // No Upstream URL present → still valid, just the notice (no footer)
+  const noUrl = buildSafeDescriptionADF({ type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'nothing here' }] }] });
+  assert(!hasEmptyTextNode(noUrl), 'fallback without URL has no empty text nodes');
+  assertEqual(extractUpstreamUrl(noUrl), null, 'fallback without URL has no Upstream URL');
+}
+
+{
+  // Both write paths wire up the INVALID_INPUT retry with the safe fallback
+  const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
+  assert(/export async function createNewJiraIssue[\s\S]*isInvalidInputError[\s\S]*buildSafeDescriptionADF/.test(helpersSrc),
+    'createNewJiraIssue retries on INVALID_INPUT with a safe description');
+  assert(/export async function editJiraIssue[\s\S]*isInvalidInputError[\s\S]*buildSafeDescriptionADF/.test(helpersSrc),
+    'editJiraIssue retries on INVALID_INPUT with a safe description');
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────
