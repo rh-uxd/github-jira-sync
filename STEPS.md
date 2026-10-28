@@ -29,7 +29,7 @@ Add bidirectional sync capabilities to sync data from Jira back to GitHub, enabl
 - **Behavior**: Adds Jira issue links to GitHub issues in both body and comments
 - **Implementation**:
   - Checks if link already exists in GitHub issue body (searches for Jira key pattern)
-  - Appends link to body if not present: `**Jira Issue:** [PF-1234](https://issues.redhat.com/browse/PF-1234)`
+  - Appends link to body if not present: `**Jira Issue:** [FELT-1234](https://redhat.atlassian.net/browse/FELT-1234)`
   - Creates comment with Jira link if comment doesn't already exist
   - Idempotent operation (safe to run multiple times)
 
@@ -41,7 +41,7 @@ Add bidirectional sync capabilities to sync data from Jira back to GitHub, enabl
   - Filters to only issues with Upstream URL (linked GitHub issues)
   - Filters to Epic and below issue types only
   - Filters by component (only processes issues for repos in `availableComponents`)
-  - Adds comment marker: "Closed via Jira sync - Jira issue PF-XXX was closed."
+  - Adds comment marker: "Closed via Jira sync - Jira issue FELT-XXX was closed."
 
 #### 4. Create GitHub Issues for Manual Jira Issues
 - **Location**: `src/syncJiraToGitHub.js` → `createGitHubIssuesForManualJira()`

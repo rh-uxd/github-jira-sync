@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl, paginatedJiraSearch } from './helpers.js';
+import { pathToFileURL } from 'node:url';
+import { jiraClient, getRepoIssues, availableComponents, hasUpstreamUrl, paginatedJiraSearch, getJiraProject } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { createJiraIssue } from './createJiraIssue.js';
 import { updateJiraIssue } from './updateJiraIssue.js';
@@ -89,7 +90,7 @@ const fetchJiraIssues = async (owner, repo, since) => {
   console.log(' - fetching Jira...');
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const jiraIssues = await paginatedJiraSearch(
-    `project = PF AND component = "${repo}" AND status not in (Closed, Resolved) AND updatedDate >= "${jiraDate}" ORDER BY key ASC`,
+    `project = ${getJiraProject(repo)} AND component = "${repo}" AND status not in (Closed, Resolved) AND updatedDate >= "${jiraDate}" ORDER BY key ASC`,
     'key,id,description,status,resolution,assignee,issuetype,updated,summary,components,reporter,customfield_10875'
   );
   console.log(`    --> Found ${jiraIssues.length} open Jira issues updated since ${since} for Jira component ${ repo }`);
@@ -101,7 +102,7 @@ const fetchClosedJiraIssues = async (owner, repo, since) => {
   // Format since date for Jira JQL (Jira uses format: YYYY-MM-DD HH:mm)
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const closedIssues = await paginatedJiraSearch(
-    `project = PF AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+    `project = ${getJiraProject(repo)} AND component = "${repo}" AND status = Closed AND updatedDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
     'key,id,description,status,assignee,issuetype,updated'
   );
   // Filter to only issues with Upstream URL
@@ -117,7 +118,7 @@ const fetchManuallyCreatedJiraIssues = async (owner, repo, since) => {
   // Format since date for Jira JQL
   const jiraDate = new Date(since).toISOString().replace('T', ' ').substring(0, 16);
   const allIssues = await paginatedJiraSearch(
-    `project = PF AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
+    `project = ${getJiraProject(repo)} AND component = "${repo}" AND createdDate >= "${jiraDate}" AND issuetype in (Epic, Story, Task, Bug, Sub-task) ORDER BY key ASC`,
     'key,id,summary,description,status,resolution,assignee,issuetype,reporter,components,updated'
   );
   // Filter to only issues without Upstream URL (manually created, not synced from GitHub)
@@ -265,27 +266,33 @@ async function syncIssues(owner, repo, since, direction = 'both') {
   }
 }
 
-// Parse command line arguments
-const options = parseArgs();
-const since = options.since || (() => {
-  const date = new Date();
-  date.setDate(date.getDate() - 2);
-  return date.toISOString();
-})();
-const direction = options.direction || 'both';
+// Only run the sync when executed directly (node src/index.js), never on import.
+// index.js is imported (via findJiraIssue.js) for the shared `jiraIssues` cache;
+// without this guard, any such import would trigger a full live sync as a side effect.
+const entryHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
+if (entryHref && import.meta.url === entryHref) {
+  // Parse command line arguments
+  const options = parseArgs();
+  const since = options.since || (() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 2);
+    return date.toISOString();
+  })();
+  const direction = options.direction || 'both';
 
-console.log(`Syncing issues since: ${since}`);
-console.log(`Sync direction: ${direction}`);
+  console.log(`Syncing issues since: ${since}`);
+  console.log(`Sync direction: ${direction}`);
 
-// If syncing all, loop through availableComponents
-for (const {name, owner} of availableComponents) {
-  await syncIssues(owner, name, since, direction);
-}
+  // If syncing all, loop through availableComponents
+  for (const {name, owner} of availableComponents) {
+    await syncIssues(owner, name, since, direction);
+  }
 
-syncStats.printSummary();
+  syncStats.printSummary();
 
-// Individual sync operations collect and log errors so the remaining repos
-// can still be processed. Mark the overall run failed only after the summary.
-if (markRunFailedIfErrors()) {
-  console.log('\nSync completed with errors; marking this run as failed.');
+  // Individual sync operations collect and log errors so the remaining repos
+  // can still be processed. Mark the overall run failed only after the summary.
+  if (markRunFailedIfErrors()) {
+    console.log('\nSync completed with errors; marking this run as failed.');
+  }
 }
