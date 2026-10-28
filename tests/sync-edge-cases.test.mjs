@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import exported functions directly
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
-import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF, isInvalidInputError, buildSafeDescriptionADF } from '../src/helpers.js';
+import { extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF, isInvalidInputError, buildSafeDescriptionADF, UNSYNCABLE_DESCRIPTION_MARKER } from '../src/helpers.js';
 import { syncStats, errorCollector, markRunFailedIfErrors } from '../src/logging.js';
 
 let passed = 0;
@@ -973,6 +973,7 @@ console.log('\n=== INVALID_INPUT description fallback ===');
   assert(!hasEmptyTextNode(fallback), 'fallback contains no empty text nodes');
   assertEqual(extractUpstreamUrl(fallback), url, 'fallback preserves the Upstream URL marker for link matching');
   assert(extractTextFromADF(fallback).includes('could not be synced'), 'fallback includes the explanatory notice');
+  assert(extractTextFromADF(fallback).includes(UNSYNCABLE_DESCRIPTION_MARKER), 'fallback contains the unsyncable marker so it is never pushed back to GitHub');
 
   // No Upstream URL present → still valid, just the notice (no footer)
   const noUrl = buildSafeDescriptionADF({ type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'nothing here' }] }] });
@@ -987,6 +988,11 @@ console.log('\n=== INVALID_INPUT description fallback ===');
     'createNewJiraIssue retries on INVALID_INPUT with a safe description');
   assert(/export async function editJiraIssue[\s\S]*isInvalidInputError[\s\S]*buildSafeDescriptionADF/.test(helpersSrc),
     'editJiraIssue retries on INVALID_INPUT with a safe description');
+
+  // The Jira→GitHub description sync must skip the fallback so it never overwrites the GitHub body
+  const syncSrc = readFileSync(join(__dirname, '../src/syncJiraToGitHub.js'), 'utf-8');
+  assert(syncSrc.includes('UNSYNCABLE_DESCRIPTION_MARKER'),
+    'syncTitleAndDescriptionToGitHub skips the fallback (UNSYNCABLE_DESCRIPTION_MARKER) so the original GitHub description is preserved');
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

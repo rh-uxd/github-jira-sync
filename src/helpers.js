@@ -121,6 +121,11 @@ export function isInvalidInputError(error) {
   );
 }
 
+// Stable marker embedded in the fallback description. The Jira→GitHub sync checks for
+// this (like the truncation notice) so the fallback is never pushed back onto the GitHub
+// issue body — otherwise the original (un-syncable) GitHub description would be lost.
+export const UNSYNCABLE_DESCRIPTION_MARKER = 'could not be synced to Jira';
+
 // Build a minimal, always-valid description ADF used as a fallback when Jira rejects the
 // real description. Preserves the "Upstream URL" marker so the GitHub <-> Jira link
 // lookup (findJiraIssue) still matches the issue.
@@ -133,7 +138,7 @@ export function buildSafeDescriptionADF(originalDescription) {
       content: [
         {
           type: 'text',
-          text: 'This description could not be synced to Jira because the GitHub issue body contains formatting Jira cannot represent. See the linked GitHub issue for the full description.',
+          text: `This description ${UNSYNCABLE_DESCRIPTION_MARKER} because the GitHub issue body contains formatting Jira cannot represent. See the linked GitHub issue for the full description.`,
         },
       ],
     },

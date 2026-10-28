@@ -18,6 +18,7 @@ import {
   extractTextFromADF,
   appendMetadataToADF,
   adfToMarkdown,
+  UNSYNCABLE_DESCRIPTION_MARKER,
 } from './helpers.js';
 import { errorCollector, syncStats } from './logging.js';
 import j2m from 'jira2md';
@@ -241,8 +242,13 @@ export async function syncTitleAndDescriptionToGitHub(jiraIssue, githubIssue) {
     const markdownDescription = jiraDescriptionToMarkdown(jiraIssue.fields.description);
     const cleanDescription = markdownDescription.replace(/(\n-{3,})+\s*$/, '').trim();
 
-    // Don't sync truncated Jira descriptions back to GitHub — GitHub has the full content
-    if (!cleanDescription.includes('Issue description was truncated due to size')) {
+    // Don't sync placeholder Jira descriptions back to GitHub — GitHub has the full content.
+    // Covers both the size-truncation notice and the INVALID_INPUT fallback; syncing either
+    // back would overwrite the real (un-syncable) GitHub body and lose it.
+    if (
+      !cleanDescription.includes('Issue description was truncated due to size') &&
+      !cleanDescription.includes(UNSYNCABLE_DESCRIPTION_MARKER)
+    ) {
       const newBody = `${cleanDescription}${jiraLinkFooter(jiraIssue.key)}`;
 
       const currentBody = normalizeBody(githubIssue.body);
