@@ -44,6 +44,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           # RH-UXD org token
           GH_JIRA_SYNC_RHUXD_PAT: ${{ secrets.GH_JIRA_SYNC_RHUXD_PAT }}
+          # RedHat-UX org token (RHDS repos — patternfly-jira-sync bot)
+          GH_JIRA_SYNC_RHDS_PAT: ${{ secrets.GH_JIRA_SYNC_RHDS_PAT }}
           # Jira Cloud Basic auth (email + API token)
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}

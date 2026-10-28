@@ -1,4 +1,4 @@
-import { getRepoPRsSince, getIssuePRLinks, editJiraIssue, buildPrUrlsADF, delay } from './helpers.js';
+import { getRepoPRsSince, getIssuePRLinks, editJiraIssue, buildPrUrlsADF, delay, getJiraProject, jiraProjectHasPrField } from './helpers.js';
 import { findJiraIssue } from './findJiraIssue.js';
 import { errorCollector, syncStats } from './logging.js';
 
@@ -13,6 +13,10 @@ function parseIssueUrl(url) {
 // are not marked as updated when a PR is linked.
 export async function syncPRLinksToJira(owner, repo, since) {
   try {
+    // Skip when the target Jira project lacks the Git PR field (customfield_10875);
+    // writing it there would 400. Re-enables automatically once the field is added.
+    if (!jiraProjectHasPrField(getJiraProject(repo))) return;
+
     const issueUrls = await getRepoPRsSince(owner, repo, since);
     if (issueUrls.length === 0) return;
 
