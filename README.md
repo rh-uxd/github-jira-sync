@@ -183,6 +183,7 @@ The application syncs issues from PatternFly repositories configured in `src/hel
 - patternfly-design
 - patternfly-design-kit
 - patternfly-doc-core
+- patternfly-elements
 - patternfly-extension-seed
 - patternfly-infra-issues
 - patternfly-mcp

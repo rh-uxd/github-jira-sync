@@ -303,6 +303,10 @@ export const availableComponents = [
     owner: 'patternfly',
   },
   {
+    name: 'patternfly-elements',
+    owner: 'patternfly',
+  },
+  {
     name: 'patternfly-extension-seed',
     owner: 'patternfly',
   },
