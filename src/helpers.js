@@ -71,24 +71,29 @@ export const jiraClient = axios.create({
 
 /**
  * Paginated Jira JQL search — fetches all matching issues across pages.
- * Jira Cloud caps results at 100 per page regardless of maxResults requested.
+ * Jira caps a page at 100 issues when `description` is requested, whatever maxResults says.
+ * /rest/api/3/search/jql pages with an opaque `nextPageToken` and reports `isLast`; it ignores `startAt`
+ * and returns no `total`. Paging by startAt/total therefore stopped after the first page and silently
+ * dropped every issue beyond the first 100.
  */
 export async function paginatedJiraSearch(jql, fields) {
   const PAGE_SIZE = 100;
-  let startAt = 0;
+  let nextPageToken;
   let allIssues = [];
-  let total;
 
-  do {
+  while (true) {
     const response = await jiraClient.get('/rest/api/3/search/jql', {
-      params: { jql, maxResults: PAGE_SIZE, fields, startAt },
+      params: { jql, maxResults: PAGE_SIZE, fields, ...(nextPageToken ? { nextPageToken } : {}) },
     });
     const data = response?.data || {};
     const issues = data.issues || [];
     allIssues = allIssues.concat(issues);
-    total = data.total ?? 0;
-    startAt += issues.length;
-  } while (startAt < total);
+
+    const next = data.isLast ? undefined : data.nextPageToken;
+    // Stop on the last page, and never loop on an empty page or a token Jira hands back unchanged
+    if (!next || issues.length === 0 || next === nextPageToken) break;
+    nextPageToken = next;
+  }
 
   return allIssues;
 }

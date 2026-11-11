@@ -15,7 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 import { parseGitHubUrl, buildBatchedIssueStateQuery } from '../src/syncJiraToGitHub.js';
 import { availableComponents, recordCreatedJiraIssue, getCreatedJiraKey, clearCreatedJiraIssues, createNewJiraIssue, extractTextFromADF, extractUpstreamUrl, buildJiraIssueData, paginatedJiraSearch, buildPrUrlsADF, getOctokitForOwner, extractJiraKeyFromText, isInvalidInputError, buildSafeDescriptionADF, UNSYNCABLE_DESCRIPTION_MARKER, shouldSyncFromGitHub, normalizeMarkdownForCompare, buildDescriptionADF, adfToMarkdown, editJiraIssue, syncCommentsToJira, stripRepoPrefix, jiraClient } from '../src/helpers.js';
 import { syncStats, errorCollector, markRunFailedIfErrors, emitCiAnnotations, buildStepSummaryMarkdown, writeStepSummary, escapeWorkflowData } from '../src/logging.js';
-import { updateChildIssues, isHierarchyError, getExistingParentKey } from '../src/updateJiraIssue.js';
+import { updateChildIssues, isHierarchyError, getExistingParentKey, findChildIssues } from '../src/updateJiraIssue.js';
 import { shouldWritePrLinks, getCurrentPrField } from '../src/syncPRLinksToJira.js';
 import { parseArgs, selectComponents } from '../src/index.js';
 import { findJiraIssue } from '../src/findJiraIssue.js';
@@ -591,10 +591,10 @@ console.log('\n=== Paginated Jira search ===');
   const indexSrc = readFileSync(join(__dirname, '../src/index.js'), 'utf-8');
   const helpersSrc = readFileSync(join(__dirname, '../src/helpers.js'), 'utf-8');
 
-  // Verify paginatedJiraSearch exists and uses startAt for pagination
   assert(helpersSrc.includes('export async function paginatedJiraSearch'), 'paginatedJiraSearch is exported from helpers');
-  assert(helpersSrc.includes('startAt'), 'paginatedJiraSearch uses startAt for pagination');
-  assert(helpersSrc.includes('data.total'), 'paginatedJiraSearch checks total for loop termination');
+  // /search/jql pages by nextPageToken and returns no `total`; paging by startAt/total stopped after page 1
+  assert(helpersSrc.includes('nextPageToken') && helpersSrc.includes('isLast'), 'paginatedJiraSearch pages by nextPageToken until isLast');
+  assert(!/startAt|data\.total/.test(helpersSrc.slice(helpersSrc.indexOf('export async function paginatedJiraSearch'), helpersSrc.indexOf('export async function addRemoteLinkToJiraIssue'))), 'paginatedJiraSearch no longer relies on startAt/total');
 
   // Verify all three fetch functions in index.js use paginatedJiraSearch
   assert(indexSrc.includes('paginatedJiraSearch') && /import \{[^}]*paginatedJiraSearch[^}]*\} from '\.\/helpers\.js'/.test(indexSrc),
@@ -611,6 +611,110 @@ console.log('\n=== Paginated Jira search ===');
   // Verify no raw jiraClient.get search/jql calls remain in index.js
   const rawCalls = indexSrc.match(/jiraClient\.get\('\/rest\/api\/3\/search\/jql'/g);
   assertEqual(rawCalls, null, 'no raw jiraClient.get search/jql calls remain in index.js');
+}
+
+// ─── paginatedJiraSearch follows nextPageToken (was capped at the first 100 results) ───
+
+console.log('\n=== paginatedJiraSearch pages by nextPageToken ===');
+
+{
+  const realGet = jiraClient.get;
+  const mkIssues = (from, count) => Array.from({ length: count }, (_, i) => ({ key: `FELT-${from + i}` }));
+  try {
+    // The real endpoint's shape: issues + nextPageToken + isLast, no `total`, `startAt` ignored.
+    // 237 results across 3 pages. The old startAt/total loop read total as 0 and returned only page 1.
+    const calls = [];
+    const pages = {
+      first: { issues: mkIssues(1, 100), nextPageToken: 'tok-1', isLast: false },
+      'tok-1': { issues: mkIssues(101, 100), nextPageToken: 'tok-2', isLast: false },
+      'tok-2': { issues: mkIssues(201, 37), isLast: true },
+    };
+    jiraClient.get = async (u, config) => {
+      calls.push({ u, params: config.params });
+      return { data: pages[config.params.nextPageToken || 'first'] };
+    };
+    const all = await paginatedJiraSearch('project = FELT', 'key');
+    assertEqual(all.length, 237, 'every page is collected (237 issues over 3 pages, not just the first 100)');
+    assertEqual(all[0].key, 'FELT-1', 'in order: first issue');
+    assertEqual(all[236].key, 'FELT-237', 'in order: last issue');
+    assertEqual(calls.length, 3, 'one request per page');
+    assert(calls.every((c) => c.u === '/rest/api/3/search/jql'), 'all requests go to the search endpoint');
+    assert(calls[0].params.nextPageToken === undefined, 'the first request carries no page token');
+    assertEqual(calls[1].params.nextPageToken, 'tok-1', 'the second request sends the first page token');
+    assertEqual(calls[2].params.nextPageToken, 'tok-2', 'the third request sends the second page token');
+    assert(calls.every((c) => !('startAt' in c.params)), 'startAt is never sent (the endpoint ignores it)');
+    assert(calls.every((c) => c.params.maxResults === 100 && c.params.jql === 'project = FELT' && c.params.fields === 'key'), 'jql, fields and the page size are sent on every request');
+
+    // a single page that is the last one: exactly one request
+    calls.length = 0;
+    jiraClient.get = async (u, config) => { calls.push(config.params); return { data: { issues: mkIssues(1, 5), isLast: true } }; };
+    assertEqual((await paginatedJiraSearch('q', 'key')).length, 5, 'a single last page returns its issues');
+    assertEqual(calls.length, 1, 'and makes one request');
+
+    // no isLast and no token at all (older shape / a mock): treated as one page, no loop
+    calls.length = 0;
+    jiraClient.get = async (u, config) => { calls.push(config.params); return { data: { issues: mkIssues(1, 3) } }; };
+    assertEqual((await paginatedJiraSearch('q', 'key')).length, 3, 'a response without isLast or a token is one page');
+    assertEqual(calls.length, 1, 'and does not loop');
+
+    // zero results
+    jiraClient.get = async () => ({ data: { issues: [], isLast: true } });
+    assertEqual((await paginatedJiraSearch('q', 'key')).length, 0, 'no results returns an empty list');
+
+    // guards against an endless loop: an empty page that still offers a token, and a token that never changes
+    calls.length = 0;
+    jiraClient.get = async (u, config) => { calls.push(config.params); return { data: { issues: [], nextPageToken: 'again', isLast: false } }; };
+    assertEqual((await paginatedJiraSearch('q', 'key')).length, 0, 'an empty page with a token ends the search');
+    assertEqual(calls.length, 1, 'after one request');
+
+    calls.length = 0;
+    jiraClient.get = async (u, config) => { calls.push(config.params); return { data: { issues: mkIssues(calls.length, 2), nextPageToken: 'same', isLast: false } }; };
+    const stuck = await paginatedJiraSearch('q', 'key');
+    assertEqual(calls.length, 2, 'a token Jira returns unchanged stops after the repeat');
+    assertEqual(stuck.length, 4, 'keeping the issues already read');
+
+    // an error propagates to the caller (the index.js fetchers rely on their own try/catch)
+    jiraClient.get = async () => { throw new Error('jira down'); };
+    let threw = false;
+    try { await paginatedJiraSearch('q', 'key'); } catch { threw = true; }
+    assert(threw, 'a failing request is not swallowed');
+  } finally {
+    jiraClient.get = realGet;
+  }
+}
+
+// ─── findChildIssues returns every child, not the first 100 ──────────────────
+
+console.log('\n=== findChildIssues pages through all children ===');
+
+{
+  const realGet = jiraClient.get;
+  try {
+    const seen = [];
+    jiraClient.get = async (u, config) => {
+      seen.push(config.params);
+      // 120 children: Jira returns 100, then 20. The old single request (maxResults 250) got only the first 100.
+      if (!config.params.nextPageToken) {
+        return { data: { issues: Array.from({ length: 100 }, (_, i) => ({ key: `FELT-${i + 1}` })), nextPageToken: 'p2', isLast: false } };
+      }
+      return { data: { issues: Array.from({ length: 20 }, (_, i) => ({ key: `FELT-${i + 101}` })), isLast: true } };
+    };
+    const children = await findChildIssues('FELT-5563');
+    assertEqual(children.length, 120, 'a parent with 120 children returns all 120');
+    assertEqual(seen.length, 2, 'in two requests');
+    assertEqual(seen[0].jql, 'parent = FELT-5563', 'the query is the parent lookup');
+    assert(String(seen[0].fields).includes('description'), 'children come back with their description (used to match Upstream URL)');
+
+    // a failure still returns [] and is recorded, as before
+    errorCollector.clear();
+    jiraClient.get = async () => { throw new Error('boom'); };
+    const none = await findChildIssues('FELT-5563');
+    assertEqual(none.length, 0, 'a failed lookup returns no children');
+    assert(errorCollector.hasErrors(), 'and the error is recorded');
+    errorCollector.clear();
+  } finally {
+    jiraClient.get = realGet;
+  }
 }
 
 // ─── Old Jira issues without Upstream URL get GitHub issues created ──────────

@@ -11,6 +11,7 @@ import {
   normalizeMarkdownForCompare,
   stripRepoPrefix,
   executeGraphQLQuery,
+  paginatedJiraSearch,
 } from './helpers.js';
 import { transitionJiraIssue } from './transitionJiraIssue.js';
 import { createChildIssues } from './createJiraIssue.js';
@@ -39,17 +40,15 @@ export async function getExistingParentKey(jiraIssueKey) {
   }
 }
 
-async function findChildIssues(jiraIssueKey) {
+// Every child of a Jira issue. Paged: a single request returns at most 100 issues when `description`
+// is requested, so a parent with more children would look like it had fewer and get duplicates.
+export async function findChildIssues(jiraIssueKey) {
   try {
     await shortDelay();
-    const response = await jiraClient.get('/rest/api/3/search/jql', {
-      params: {
-        jql: `parent = ${jiraIssueKey}`,
-        maxResults: 250,
-        fields: 'key,description,updated,status',
-      },
-    });
-    return response.data.issues;
+    return await paginatedJiraSearch(
+      `parent = ${jiraIssueKey}`,
+      'key,description,updated,status'
+    );
   } catch (error) {
     errorCollector.addError(
       `UPDATEJIRA: Error finding child issues for ${jiraIssueKey}`,
